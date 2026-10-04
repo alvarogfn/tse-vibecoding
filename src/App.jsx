@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -372,10 +372,7 @@ export default function App() {
                 const byKey = new Map(list.map((c) => [c.key, c]))
                 const pinKeys = pinned[raceId] || []
                 const pinnedCands = pinKeys.map((k) => byKey.get(k)).filter(Boolean)
-                const pinSet = new Set(pinKeys)
                 const rankPos = new Map(list.map((c, idx) => [c.key, idx + 1]))
-                // fixados no topo da lista (na ordem fixada), depois o ranking por votos
-                const sorted = [...pinnedCands, ...list.filter((c) => !pinSet.has(c.key))]
                 const top10 = list.slice(0, 10)
                 const chartCands = pinnedCands.length ? pinnedCands : top10
                 return (
@@ -389,10 +386,38 @@ export default function App() {
                     {!col.rankingOnly && (
                       <PinnedStrip cands={pinnedCands} onUnpin={(k) => togglePin(raceId, k)} />
                     )}
+                    {!col.rankingOnly && pinnedCands.length > 0 && (
+                      <div className="cards" style={{ flex: 'none', maxHeight: 230, overflowY: 'auto', marginBottom: 6 }}>
+                        <div className="chart-title">Fixados · {pinnedCands.length}</div>
+                        {pinnedCands.map((c) => (
+                          <Fragment key={c.key}>
+                            <CandCard
+                              c={c} i={0}
+                              validos={parsed?.meta?.validos} total={parsed?.meta?.totalVotos}
+                              pos={rankPos.get(c.key)}
+                              onClick={isProp ? () => toggleOpen(c.key) : undefined}
+                              selected={isProp && !!open[c.key]}
+                              onPin={() => togglePin(raceId, c.key)}
+                              isPinned
+                            />
+                            {isProp && open[c.key] && <div style={{ marginTop: 4 }}><CeDetail parsed={parsed} cand={c} /></div>}
+                          </Fragment>
+                        ))}
+                      </div>
+                    )}
+                    {!col.rankingOnly && (
+                      <>
+                        <div className="chart-title">{pinnedCands.length ? `Fixados (${pinnedCands.length})` : 'Top 10'} · {metric === 'pct' ? '% s/ válidos' : 'votos'} · {effHist.length} pts</div>
+                        <div className="chart-box" style={{ flex: 'none', height: 150 }}>
+                          <RaceChart visible={chartCands} history={effHist} metric={metric} />
+                        </div>
+                        <div className="chart-title">Ranking geral · {list.length}</div>
+                      </>
+                    )}
                     <div style={{ flex: 1, minHeight: 60 }}>
                       <Virtuoso
                         style={{ height: '100%' }}
-                        data={sorted}
+                        data={list}
                         computeItemKey={(_idx, c) => c.key}
                         itemContent={(i, c) => (
                           <>
@@ -400,11 +425,11 @@ export default function App() {
                               <CandCard
                                 c={c} i={i}
                                 validos={parsed?.meta?.validos} total={parsed?.meta?.totalVotos}
-                                pos={rankPos.get(c.key)}
+                                pos={i + 1}
                                 onClick={isProp ? () => toggleOpen(c.key) : undefined}
                                 selected={isProp && !!open[c.key]}
                                 onPin={col.rankingOnly ? undefined : () => togglePin(raceId, c.key)}
-                                isPinned={pinSet.has(c.key)}
+                                isPinned={pinKeys.includes(c.key)}
                               />
                               {isProp && open[c.key] && <div style={{ marginTop: 4 }}><CeDetail parsed={parsed} cand={c} /></div>}
                             </div>
@@ -412,14 +437,6 @@ export default function App() {
                         )}
                       />
                     </div>
-                    {!col.rankingOnly && (
-                      <>
-                        <div className="chart-title">{pinnedCands.length ? `Fixados (${pinnedCands.length})` : 'Top 10'} · {metric === 'pct' ? '% s/ válidos' : 'votos'} · {effHist.length} pts</div>
-                        <div className="chart-box" style={{ flex: 'none', height: 150 }}>
-                          <RaceChart visible={chartCands} history={effHist} metric={metric} />
-                        </div>
-                      </>
-                    )}
                   </div>
                 )
               })}

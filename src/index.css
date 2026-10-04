@@ -187,33 +187,19 @@ a { color: inherit; }
 }
 .pin-btn:hover { color: var(--accent); }
 .pin-btn.on { color: var(--accent); }
-.pinned-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin: 2px 0 6px;
+.search {
+  background: #000;
+  color: #fafafa;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  width: 100%;
+  margin-bottom: 6px;
+  flex: none;
 }
-.pin-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: #1c1a05;
-  border: 1px solid var(--accent);
-  color: var(--accent);
-  border-radius: 12px;
-  padding: 1px 2px 1px 6px;
-  font-size: 10px;
-  font-weight: 700;
-}
-.pin-chip button {
-  background: transparent;
-  border: 0;
-  color: var(--accent);
-  cursor: pointer;
-  font-size: 12px;
-  line-height: 1;
-  padding: 0 3px;
-}
+.search::placeholder { color: var(--muted); }
+.search:focus { outline: none; border-color: var(--accent); }
 .avatar {
   width: 26px; height: 26px; border-radius: 50%;
   object-fit: cover; background: #000; flex: none;

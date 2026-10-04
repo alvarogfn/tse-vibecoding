@@ -11,6 +11,7 @@ import {
 } from 'chart.js'
 import { Line } from 'react-chartjs-2'
 import { Virtuoso } from 'react-virtuoso'
+import FuzzySearch from 'fuzzy-search'
 import { RACES, COLUMNS, UFS, fetchRaceJson, fetchMissaoUF, parseRace, colorFor, fmtInt, calcQuociente, sharePct } from './lib/tse.js'
 import { loadHistory, appendSnapshot, clearHistory, hashVotes } from './lib/history.js'
 
@@ -22,6 +23,18 @@ const GRID = '#27272a'
 
 function fmtPct(n) {
   return Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
+}
+
+// Busca aproximada (typo-tolerant) sobre a lista; sem query retorna tudo
+function fuzzyFilter(list, query, keys) {
+  const q = (query || '').trim()
+  if (!q) return list
+  try {
+    return new FuzzySearch(list, keys, { caseSensitive: false, sort: true }).search(q)
+  } catch {
+    const lq = q.toLowerCase()
+    return list.filter((c) => keys.some((k) => String(c[k] || '').toLowerCase().includes(lq)))
+  }
 }
 
 function Avatar({ src, name }) {
@@ -165,20 +178,6 @@ function CeDetail({ parsed, cand }) {
   )
 }
 
-function PinnedStrip({ cands, onUnpin }) {
-  if (!cands.length) return null
-  return (
-    <div className="pinned-strip" title="Fixados — só eles aparecem no gráfico">
-      {cands.map((c) => (
-        <span key={c.key} className="pin-chip" title={`${c.nomeFull} · ${c.partido}-${c.numero}`}>
-          ★ {c.numero}
-          <button onClick={() => onUnpin(c.key)} title="Desafixar">×</button>
-        </span>
-      ))}
-    </div>
-  )
-}
-
 const UFNAME = Object.fromEntries(UFS)
 
 function MissCard({ uf, r }) {
@@ -221,9 +220,11 @@ function MissCard({ uf, r }) {
 }
 
 function MissaoCol({ titulo, data, meta }) {
-  const rows = UFS.map(([uf]) => ({ uf, r: data[uf] })).filter((x) => x.r)
-  const okRows = rows.filter((x) => x.r.ok && x.r.found)
-  const totalQP = okRows.reduce((a, x) => a + x.r.qp, 0)
+  const [q, setQ] = useState('')
+  const pool = UFS.map(([uf]) => ({ uf, name: UFNAME[uf] || uf, r: data[uf] })).filter((x) => x.r)
+  const rows = fuzzyFilter(pool, q, ['name', 'uf'])
+  const okCount = pool.filter((x) => x.r.ok && x.r.found).length
+  const totalQP = pool.reduce((a, x) => a + (x.r.ok && x.r.found ? x.r.qp : 0), 0)
   const sorted = [...rows].sort((a, b) => {
     const qa = a.r.ok && a.r.found ? a.r.qp : -1
     const qb = b.r.ok && b.r.found ? b.r.qp : -1
@@ -233,8 +234,14 @@ function MissaoCol({ titulo, data, meta }) {
   return (
     <section className="column">
       <div className="col-title">{titulo}</div>
+      <input
+        className="search"
+        placeholder="Buscar estado…"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+      />
       <div className="summary" title="Soma dos quocientes partidários do MISSÃO apurados até agora (parcial)">
-        MISSÃO: <b>{totalQP} cadeira(s)</b> · {meta.loading ? `lendo ${meta.done}/${meta.total}…` : `atualizado ${meta.at || '—'}`}
+        MISSÃO: <b>{totalQP} cadeira(s)</b> · {okCount} UFs · {meta.loading ? `lendo ${meta.done}/${meta.total}…` : `atualizado ${meta.at || '—'}`}
       </div>
       <div className="cards scroll" style={{ flex: 1, minHeight: 60 }}>
         {sorted.map(({ uf, r }) => (
@@ -256,6 +263,7 @@ export default function App() {
   const [refreshMs, setRefreshMs] = useState(REFRESH_MS)
   const [open, setOpen] = useState({}) // { [candKey]: true } — vários QE abertos
   const toggleOpen = useCallback((key) => setOpen((p) => ({ ...p, [key]: !p[key] })), [])
+  const [search, setSearch] = useState({}) // { [raceId]: query } — busca por nome na coluna
   const [missao, setMissao] = useState({ fed: {}, est: {}, at: null, loading: true, done: 0, total: UFS.length * 2 })
   const [pinned, setPinned] = useState(() => {
     try {
@@ -492,6 +500,8 @@ export default function App() {
                 const pinKeys = pinned[raceId] || []
                 const pinnedCands = pinKeys.map((k) => byKey.get(k)).filter(Boolean)
                 const rankPos = new Map(list.map((c, idx) => [c.key, idx + 1]))
+                const query = search[raceId] || ''
+                const filtered = fuzzyFilter(list, query, ['nomeUrna', 'nomeFull', 'numero', 'partido'])
                 const top10 = list.slice(0, 10)
                 const chartCands = pinnedCands.length ? pinnedCands : top10
                 return (
@@ -502,9 +512,12 @@ export default function App() {
                     </div>
                     {errors[raceId] && !parsed && <div className="err">{errors[raceId]}</div>}
                     {parsed && <Summary meta={parsed.meta} />}
-                    {!col.rankingOnly && (
-                      <PinnedStrip cands={pinnedCands} onUnpin={(k) => togglePin(raceId, k)} />
-                    )}
+                    <input
+                      className="search"
+                      placeholder="Buscar nome…"
+                      value={search[raceId] || ''}
+                      onChange={(e) => setSearch((p) => ({ ...p, [raceId]: e.target.value }))}
+                    />
                     {!col.rankingOnly && pinnedCands.length > 0 && (
                       <div className="cards" style={{ flex: 'none', maxHeight: 230, overflowY: 'auto', marginBottom: 6 }}>
                         <div className="chart-title">Fixados · {pinnedCands.length}</div>
@@ -538,7 +551,7 @@ export default function App() {
                     <div style={{ flex: 1, minHeight: 60 }}>
                       <Virtuoso
                         style={{ height: '100%' }}
-                        data={list}
+                        data={filtered}
                         computeItemKey={(_idx, c) => c.key}
                         itemContent={(i, c) => (
                           <>
@@ -546,7 +559,7 @@ export default function App() {
                               <CandCard
                                 c={c} i={i}
                                 validos={parsed?.meta?.validos} total={parsed?.meta?.totalVotos}
-                                pos={i + 1}
+                                pos={rankPos.get(c.key)}
                                 onClick={isProp ? () => toggleOpen(c.key) : undefined}
                                 selected={isProp && !!open[c.key]}
                                 onPin={col.rankingOnly ? undefined : () => togglePin(raceId, c.key)}

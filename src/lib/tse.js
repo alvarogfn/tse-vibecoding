@@ -267,6 +267,42 @@ export function colorFor(numero, index) {
   return PALETTE[h % PALETTE.length] || PALETTE[index % PALETTE.length]
 }
 
+// Cores usuais das legendas (p/ pizzas e destaques); fallback = colorFor
+export const PARTY_COLORS = {
+  '10': '#003B71', // REPUBLICANOS
+  '11': '#0091DA', // PP
+  '12': '#004B8D', // PDT
+  '13': '#DA291C', // PT
+  '14': '#FACC15', // MISSÃO
+  '15': '#00A651', // MDB
+  '16': '#E30613', // PSTU
+  '18': '#009444', // REDE
+  '20': '#00A651', // PODE
+  '21': '#E30613', // PCB
+  '22': '#002776', // PL
+  '23': '#EC008C', // CIDADANIA
+  '25': '#7B2D8E', // PRD
+  '27': '#0091DA', // DC
+  '29': '#E30613', // PCO
+  '30': '#F26522', // NOVO
+  '33': '#7B2D8E', // MOBILIZA
+  '36': '#00A651', // AGIR
+  '40': '#FDB913', // PSB
+  '43': '#078930', // PV
+  '44': '#1B2A6B', // UNIÃO
+  '45': '#008ACB', // PSDB
+  '50': '#D52B1E', // PSOL
+  '55': '#0F4C81', // PSD
+  '65': '#DA291C', // PCdoB
+  '70': '#F26522', // AVANTE
+  '77': '#F7941E', // SOLIDARIEDADE
+  '80': '#9CA3AF', // UP (cinza — preto some no fundo)
+}
+
+export function partyColor(pn, index = 0) {
+  return PARTY_COLORS[String(pn)] || colorFor(pn, index)
+}
+
 export function fmtInt(n) {
   return Number(n || 0).toLocaleString('pt-BR')
 }

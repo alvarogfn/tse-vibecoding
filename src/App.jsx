@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -180,21 +180,24 @@ function CeDetail({ parsed, cand }) {
 
 function PartyCard({ p }) {
   const seats = (p.fed?.qp || 0) + (p.est?.qp || 0) + (p.sen?.seats || 0)
-  const row = (label, d, topTxt) => (
+  const topName = (t) => (t ? `${t.nome} ${fmtInt(t.vap)} (${t.numero})` : '—')
+  const fedTxt = p.fed ? `${p.fed.qp} cad · top ${topName(p.fed.top)}` : null
+  const estTxt = p.est ? `${p.est.qp} cad · top ${topName(p.est.top)}` : null
+  const senTxt = p.sen ? `${p.sen.seats}/${p.sen.vagas} · top ${topName(p.sen.top)}` : null
+  const row = (label, txt) => (
     <div className="party-row">
-      {label} · {d == null ? <span className="party-top">s/dados</span> : <><b>{topTxt}</b></>}
+      {label} · {txt == null ? <span className="party-top">s/dados</span> : <b>{txt}</b>}
     </div>
   )
-  const topName = (t) => (t ? `${t.nome} ${fmtInt(t.vap)} (${t.numero})` : '—')
   return (
     <div
       className="party"
       title={`${p.sg} — Fed ${p.fed ? `${fmtInt(p.fed.votes)} votos, QP ${p.fed.qp}` : 's/dados'} · Est ${p.est ? `${fmtInt(p.est.votes)} votos, QP ${p.est.qp}` : 's/dados'} · Sen ${p.sen ? `${p.sen.seats}/${p.sen.vagas}` : 's/dados'}`}
     >
       <div className="party-name">{p.sg} – {p.pn} · <b>{seats} cad.</b></div>
-      {row('Fed', p.fed, `${p.fed.qp} cad · top ${topName(p.fed.top)}`)}
-      {row('Est', p.est, `${p.est.qp} cad · top ${topName(p.est.top)}`)}
-      {row('Sen', p.sen, `${p.sen.seats}/${p.sen.vagas} · top ${topName(p.sen.top)}`)}
+      {row('Fed', fedTxt)}
+      {row('Est', estTxt)}
+      {row('Sen', senTxt)}
     </div>
   )
 }
@@ -202,7 +205,12 @@ function PartyCard({ p }) {
 function UFColumn({ uf, name, data, at }) {
   const parties = useMemo(() => {
     if (!data) return []
-    const agg = aggregateParties(data)
+    let agg = []
+    try {
+      agg = aggregateParties(data)
+    } catch {
+      return []
+    }
     const seatsOf = (p) => (p.fed?.qp || 0) + (p.est?.qp || 0) + (p.sen?.seats || 0)
     const votesOf = (p) => (p.fed?.votes || 0) + (p.est?.votes || 0)
     return agg.sort((a, b) => seatsOf(b) - seatsOf(a) || votesOf(b) - votesOf(a))
@@ -221,6 +229,28 @@ function UFColumn({ uf, name, data, at }) {
       </div>
     </section>
   )
+}
+
+// Uma coluna com erro nunca mais apaga o painel inteiro
+class ColGuard extends React.Component {
+  constructor(p) {
+    super(p)
+    this.state = { err: null }
+  }
+  static getDerivedStateFromError(err) {
+    return { err: String(err?.message || err) }
+  }
+  render() {
+    if (this.state.err) {
+      return (
+        <section className="column">
+          <div className="col-title">{this.props.title}</div>
+          <div className="err">Falha nesta coluna: {this.state.err}</div>
+        </section>
+      )
+    }
+    return this.props.children
+  }
 }
 
 export default function App() {
@@ -520,7 +550,9 @@ export default function App() {
             </section>
           ))}
           {UFS.map(([uf, name]) => (
-            <UFColumn key={uf} uf={uf} name={name} data={ufs[uf]} at={ufs[uf]?.at || ufsMeta.at} />
+            <ColGuard key={uf} title={name}>
+              <UFColumn uf={uf} name={name} data={ufs[uf]} at={ufs[uf]?.at || ufsMeta.at} />
+            </ColGuard>
           ))}
         </div>
 

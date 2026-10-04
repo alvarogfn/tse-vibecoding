@@ -1,0 +1,381 @@
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+} from 'chart.js'
+import { Line } from 'react-chartjs-2'
+import { RACES, COLUMNS, fetchRaceJson, parseRace, colorFor, fmtInt, calcQuociente, sharePct } from './lib/tse.js'
+import { loadHistory, appendSnapshot, clearHistory, hashVotes } from './lib/history.js'
+
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend)
+
+const REFRESH_MS = 5000
+const AXIS = '#a1a1aa'
+const GRID = '#27272a'
+
+function fmtPct(n) {
+  return Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
+}
+
+function Avatar({ src, name }) {
+  const [err, setErr] = useState(false)
+  const initials = (name || '?')
+    .split(' ')
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join('')
+    .toUpperCase()
+  if (err) return <div className="avatar-fallback">{initials}</div>
+  return <img className="avatar" src={src} alt={name} loading="lazy" onError={() => setErr(true)} />
+}
+
+function shareFromSnap(snap, numero) {
+  if (!snap) return null
+  if (snap.share && snap.share[numero] != null) return snap.share[numero]
+  const v = snap.votes?.[numero]
+  if (v == null) return null
+  const denom = snap.validos || snap.total
+  if (denom) return (v / denom) * 100
+  if (snap.pct && snap.pct[numero] != null) return snap.pct[numero]
+  return null
+}
+
+function RaceChart({ visible, history, metric }) {
+  const pts = history || []
+  const labels = pts.map((s) => s.label)
+  const datasets = visible.map((c, i) => ({
+    label: `${c.numero} ${c.nomeUrna}`,
+    data: pts.map((s) =>
+      metric === 'pct' ? shareFromSnap(s, c.numero) : (s.votes?.[c.numero] ?? null)
+    ),
+    borderColor: colorFor(c.numero, i),
+    backgroundColor: colorFor(c.numero, i),
+    tension: 0.25,
+    pointRadius: 0,
+    borderWidth: 1.5,
+    spanGaps: true,
+  }))
+  const options = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { position: 'bottom', labels: { boxWidth: 8, font: { size: 9 }, color: '#fafafa' } },
+      tooltip: {
+        callbacks: {
+          label: (ctx) =>
+            metric === 'pct'
+              ? ` ${ctx.dataset.label}: ${fmtPct(ctx.parsed.y)}`
+              : ` ${ctx.dataset.label}: ${fmtInt(ctx.parsed.y)} votos`,
+        },
+      },
+    },
+    scales: {
+      x: { ticks: { font: { size: 8 }, maxTicksLimit: 4, color: AXIS }, grid: { color: GRID } },
+      y: {
+        ticks: {
+          font: { size: 8 },
+          maxTicksLimit: 5,
+          color: AXIS,
+          callback: (v) => (metric === 'pct' ? `${Number(v).toFixed(1)}%` : fmtInt(v)),
+        },
+        grid: { color: GRID },
+      },
+    },
+  }
+  if (!pts.length) return <div className="hint">Sem histórico ainda.</div>
+  return <Line data={{ labels, datasets }} options={options} />
+}
+
+function Summary({ meta }) {
+  const s = meta?.s || {}
+  const txt = `${s.pst || '-'}% urnas · ${fmtInt(meta?.validos)} válidos · ${fmtInt(meta?.v?.tv)} votos`
+  const full = `Seções ${fmtInt(s.st)}/${fmtInt(s.ts)} · Eleitorado ${fmtInt(meta?.e?.te)} · Comparec. ${fmtInt(meta?.e?.c)} · Brancos ${fmtInt(meta?.v?.vb)} · Nulos ${fmtInt(meta?.v?.vn ?? meta?.v?.tvn)}`
+  return <div className="summary" title={full}>{txt}</div>
+}
+
+function QuocienteLine({ parsed }) {
+  const parties = [...new Set((parsed.candidatos || []).map((c) => c.partidoNum))]
+  return (
+    <>
+      {parties.map((pn) => {
+        const q = calcQuociente(parsed.meta, parsed.partidos, pn)
+        const full = `Partido ${fmtInt(q.partyVotes)} (legenda ${fmtInt(q.legenda)}) · QE ${fmtInt(q.qe)} · QP floor(${fmtInt(q.partyVotes)}/${fmtInt(q.qe)})=${q.qp} · Vagas ${q.vagas}`
+        return (
+          <div key={pn} className={`summary ${q.atingiu ? 'ok' : 'bad'}`} title={full}>
+            {q.sigla || pn}: {q.atingiu ? `${q.qp} cadeira(s)` : `0 · faltam ${fmtInt(q.faltam)} (${fmtPct(q.pctQE)} QE)`}
+          </div>
+        )
+      })}
+    </>
+  )
+}
+
+function CandCard({ c, i, validos, total, pos, onClick, selected }) {
+  const pctCalc = sharePct(c.vap, validos || total)
+  return (
+    <div
+      className={`cand${onClick ? ' clickable' : ''}${selected ? ' selected' : ''}`}
+      title={`${c.nomeFull} · TSE ${c.pvap}%${onClick ? ' · clique p/ ver cadeiras do partido' : ''}`}
+      onClick={onClick}
+    >
+      <Avatar src={c.foto} name={c.nomeUrna} />
+      <div className="cand-mid">
+        <div className="cand-name">
+          {pos != null && <span className="pos">{pos}º </span>}
+          <span className="dot" style={{ background: colorFor(c.numero, i) }} />{c.nomeUrna}
+        </div>
+        <div className="cand-party">{c.partido} – {c.numero}</div>
+      </div>
+      <div className="cand-pct">
+        <b>{fmtPct(pctCalc)}</b>
+        <span>{fmtInt(c.vap)}</span>
+      </div>
+    </div>
+  )
+}
+
+function CeDetail({ parsed, cand }) {
+  const q = calcQuociente(parsed.meta, parsed.partidos, cand.partidoNum)
+  const min = Math.ceil(q.qe * 0.1)
+  const okMin = q.qe > 0 && cand.vap >= q.qe * 0.1
+  return (
+    <div className="ce-detail" title={`Partido ${fmtInt(q.partyVotes)} votos (legenda ${fmtInt(q.legenda)}) · QE ${fmtInt(q.qe)} · QP ${q.qp}`}>
+      {q.sigla || cand.partido}: <b>{q.atingiu ? `${q.qp} cadeira(s)` : '0 cadeiras'} pelo QE</b>
+      {' '}· partido {fmtInt(q.partyVotes)} votos · QE {fmtInt(q.qe)}
+      {' '}· {q.atingiu ? `faltam ${fmtInt(q.faltam)} p/ a próxima` : `faltam ${fmtInt(q.faltam)} p/ a 1ª`}
+      {' '}· candidato {fmtInt(cand.vap)} votos (10% QE = {fmtInt(min)}: {okMin ? 'tem' : 'não tem'})
+      {' '}· parcial {parsed.meta.hg}
+    </div>
+  )
+}
+
+export default function App() {
+  const [data, setData] = useState({})
+  const [errors, setErrors] = useState({})
+  const [history, setHistory] = useState({})
+  const [loading, setLoading] = useState(true)
+  const [auto, setAuto] = useState(true)
+  const [metric, setMetric] = useState('pct')
+  const [countdown, setCountdown] = useState(REFRESH_MS / 1000)
+  const [refreshMs, setRefreshMs] = useState(REFRESH_MS)
+  const [open, setOpen] = useState({}) // { [candKey]: true } — vários QE abertos
+  const toggleOpen = useCallback((key) => setOpen((p) => ({ ...p, [key]: !p[key] })), [])
+  const fetchingRef = useRef(false)
+  const raceById = useMemo(() => Object.fromEntries(RACES.map((r) => [r.id, r])), [])
+
+  useEffect(() => {
+    loadHistory().then((h) => setHistory(h || {}))
+  }, [])
+
+  const fetchAll = useCallback(async () => {
+    if (fetchingRef.current) return
+    fetchingRef.current = true
+    setLoading(true)
+    const nextData = {}
+    const nextErr = {}
+    for (const race of RACES) {
+      try {
+        const raw = await fetchRaceJson(race.url)
+        const parsed = parseRace(race, raw)
+        nextData[race.id] = parsed
+        // ranking do senado: sem gráfico, não grava histórico
+        if (race.tipo !== 'senado') {
+          const votes = {}
+          const pctTse = {}
+          const share = {}
+          const names = {}
+          for (const c of parsed.candidatos) {
+            votes[c.numero] = c.vap
+            pctTse[c.numero] = c.pvapNum
+            share[c.numero] = sharePct(c.vap, parsed.meta.validos || parsed.meta.totalVotos)
+            names[c.numero] = c.nomeUrna
+          }
+          const label = `${parsed.meta.ht || parsed.meta.hg || new Date().toLocaleTimeString('pt-BR')}`
+          const snap = {
+            t: Date.now(),
+            label,
+            hg: parsed.meta.hg,
+            dg: parsed.meta.dg,
+            hash: hashVotes(parsed.candidatos),
+            votes,
+            pct: pctTse,
+            share,
+            names,
+            validos: parsed.meta.validos,
+            total: parsed.meta.totalVotos,
+            secoes: parsed.meta?.s?.st,
+          }
+          const updated = await appendSnapshot(race.id, snap)
+          setHistory(updated)
+        }
+      } catch (err) {
+        nextErr[race.id] = String(err?.message || err)
+      }
+    }
+    setData((prev) => ({ ...prev, ...nextData }))
+    setErrors(nextErr)
+    setLoading(false)
+    setCountdown(refreshMs / 1000)
+    fetchingRef.current = false
+  }, [refreshMs])
+
+  useEffect(() => {
+    fetchAll()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    if (!auto) return
+    const id = setInterval(() => {
+      setCountdown((c) => {
+        if (c <= 1) {
+          fetchAll()
+          return refreshMs / 1000
+        }
+        return c - 1
+      })
+    }, 1000)
+    return () => clearInterval(id)
+  }, [auto, fetchAll])
+
+  const totalHistoryPoints = useMemo(
+    () => Object.values(history).reduce((a, arr) => a + (arr?.length || 0), 0),
+    [history]
+  )
+
+  function effHistFor(raceId) {
+    const parsed = data[raceId]
+    const cands = parsed?.candidatos || []
+    const hist = history[raceId] || []
+    if (hist.length > 0) return hist
+    if (!cands.length) return []
+    return [
+      {
+        label: parsed?.meta?.ht || parsed?.meta?.hg || 'agora',
+        votes: Object.fromEntries(cands.map((c) => [c.numero, c.vap])),
+        share: Object.fromEntries(cands.map((c) => [c.numero, sharePct(c.vap, parsed.meta.validos)])),
+        pct: Object.fromEntries(cands.map((c) => [c.numero, c.pvapNum])),
+        validos: parsed.meta.validos,
+        total: parsed.meta.totalVotos,
+      },
+    ]
+  }
+
+  return (
+    <div className="page">
+      <div className="topbar">
+        <h1>Apuração 2026 — Tempo real</h1>
+        <div className="sub">foco + ranking geral · % s/ válidos · {refreshMs / 1000}s</div>
+        <div className="spacer" />
+        <span className="badge">{auto ? `${countdown}s` : 'pausado'}</span>
+        <span className="badge">{totalHistoryPoints} pts</span>
+        <select
+          className="select small"
+          value={refreshMs}
+          title="Intervalo de atualização"
+          onChange={(e) => {
+            const v = Number(e.target.value)
+            setRefreshMs(v)
+            setCountdown(v / 1000)
+          }}
+        >
+          <option value={1000}>1s</option>
+          <option value={3000}>3s</option>
+          <option value={5000}>5s</option>
+          <option value={10000}>10s</option>
+        </select>
+        <button className="btn ghost small" onClick={() => setMetric(metric === 'votos' ? 'pct' : 'votos')}>
+          {metric === 'votos' ? 'votos' : '%'}
+        </button>
+        <button className="btn ghost small" onClick={() => setAuto(!auto)}>{auto ? 'Pausar' : 'Retomar'}</button>
+        <button className="btn small" onClick={fetchAll} disabled={loading}>{loading ? '...' : 'Atualizar'}</button>
+        <button
+          className="btn ghost small"
+          onClick={async () => {
+            if (confirm('Limpar histórico do IndexedDB?')) setHistory(await clearHistory())
+          }}
+        >
+          Limpar
+        </button>
+      </div>
+
+      <div className="wrap">
+        <div className="grid-races">
+          {COLUMNS.map((col) => (
+            <section key={col.key} className="column">
+              <div className="col-title">{col.titulo}</div>
+              {col.races.map((raceId) => {
+                const race = raceById[raceId]
+                const parsed = data[raceId]
+                const cands = parsed?.candidatos || []
+                if (col.rankingOnly) {
+                  return (
+                    <div key={raceId} className="sub-race" style={{ flex: 1, minHeight: 0 }}>
+                      <div className="race-head">
+                        <h2>{race.titulo}</h2>
+                        <div className="meta">{parsed ? `${parsed.meta.hg}` : '…'}</div>
+                      </div>
+                      {errors[raceId] && !parsed && <div className="err">{errors[raceId]}</div>}
+                      {parsed && <Summary meta={parsed.meta} />}
+                      <div className="cards scroll">
+                        {cands.map((c, i) => (
+                          <CandCard key={c.key} c={c} i={i} validos={parsed?.meta?.validos} total={parsed?.meta?.totalVotos} pos={i + 1} />
+                        ))}
+                      </div>
+                    </div>
+                  )
+                }
+                const effHist = effHistFor(raceId)
+                const isProp = race.tipo === 'proporcional'
+                const ranking = (parsed?.ranking || []).filter((c) => !(race.allow || []).includes(c.numero))
+                const rankPos = new Map((parsed?.ranking || []).map((c, idx) => [c.key, idx + 1]))
+                const depCard = (c, i, pos) => (
+                  <Fragment key={c.key}>
+                    <CandCard c={c} i={i} validos={parsed?.meta?.validos} total={parsed?.meta?.totalVotos} pos={pos} onClick={() => toggleOpen(c.key)} selected={!!open[c.key]} />
+                    {open[c.key] && <CeDetail parsed={parsed} cand={c} />}
+                  </Fragment>
+                )
+                return (
+                  <div key={raceId} className="sub-race" style={isProp ? { flex: 1, minHeight: 0 } : undefined}>
+                    <div className="race-head">
+                      <h2>{race.titulo}</h2>
+                      <div className="meta">{parsed ? `${parsed.meta.hg} · ${effHist.length}` : '…'}</div>
+                    </div>
+                    {errors[raceId] && !parsed && <div className="err">{errors[raceId]}</div>}
+                    {parsed && <Summary meta={parsed.meta} />}
+                    {parsed && isProp && <QuocienteLine parsed={parsed} />}
+                    <div className="cards">
+                      {cands.map((c, i) => (isProp ? depCard(c, i, rankPos.get(c.key)) : (
+                        <CandCard key={c.key} c={c} i={i} validos={parsed?.meta?.validos} total={parsed?.meta?.totalVotos} />
+                      )))}
+                    </div>
+                    <div className="chart-title">{metric === 'pct' ? '% s/ válidos' : 'votos'} · {effHist.length} pts</div>
+                    <div className="chart-box" style={isProp ? { flex: 'none', height: 170 } : undefined}>
+                      <RaceChart visible={cands} history={effHist} metric={metric} />
+                    </div>
+                    {isProp && parsed && (
+                      <>
+                        <div className="chart-title">Ranking geral · {ranking.length} outros</div>
+                        <div className="cards scroll" style={{ flex: 1, minHeight: 80 }}>
+                          {ranking.map((c, i) => depCard(c, i, rankPos.get(c.key)))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )
+              })}
+            </section>
+          ))}
+        </div>
+
+        <div className="footer">Pres 22/13/14 · Gov MG-SP 10/13 · Fed 1420 + ranking · Est 14000 + ranking · Senado MG geral · QE = válidos/vagas · {refreshMs / 1000}s</div>
+      </div>
+    </div>
+  )
+}

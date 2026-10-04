@@ -117,7 +117,7 @@ function QuocienteLine({ parsed }) {
   )
 }
 
-function CandCard({ c, i, validos, total, pos, onClick, selected }) {
+function CandCard({ c, i, validos, total, pos, onClick, selected, onPin, isPinned }) {
   const pctCalc = sharePct(c.vap, validos || total)
   return (
     <div
@@ -137,6 +137,15 @@ function CandCard({ c, i, validos, total, pos, onClick, selected }) {
         <b>{fmtPct(pctCalc)}</b>
         <span>{fmtInt(c.vap)}</span>
       </div>
+      {onPin && (
+        <button
+          className={`pin-btn${isPinned ? ' on' : ''}`}
+          title={isPinned ? 'Desafixar (sai do gráfico e do header)' : 'Fixar no header e no gráfico'}
+          onClick={(e) => { e.stopPropagation(); onPin() }}
+        >
+          {isPinned ? '★' : '☆'}
+        </button>
+      )}
     </div>
   )
 }
@@ -156,6 +165,20 @@ function CeDetail({ parsed, cand }) {
   )
 }
 
+function PinnedStrip({ cands, onUnpin }) {
+  if (!cands.length) return null
+  return (
+    <div className="pinned-strip" title="Fixados — só eles aparecem no gráfico">
+      {cands.map((c) => (
+        <span key={c.key} className="pin-chip" title={`${c.nomeFull} · ${c.partido}-${c.numero}`}>
+          ★ {c.numero}
+          <button onClick={() => onUnpin(c.key)} title="Desafixar">×</button>
+        </span>
+      ))}
+    </div>
+  )
+}
+
 export default function App() {
   const [data, setData] = useState({})
   const [errors, setErrors] = useState({})
@@ -167,6 +190,27 @@ export default function App() {
   const [refreshMs, setRefreshMs] = useState(REFRESH_MS)
   const [open, setOpen] = useState({}) // { [candKey]: true } — vários QE abertos
   const toggleOpen = useCallback((key) => setOpen((p) => ({ ...p, [key]: !p[key] })), [])
+  const [pinned, setPinned] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('tse-pinned-v1') || '{}')
+    } catch {
+      return {}
+    }
+  }) // { [raceId]: [candKey] } — só fixados vão ao gráfico + header
+  const pinnedRef = useRef({})
+  useEffect(() => {
+    pinnedRef.current = pinned
+    try {
+      localStorage.setItem('tse-pinned-v1', JSON.stringify(pinned))
+    } catch { /* sem persistência */ }
+  }, [pinned])
+  const togglePin = useCallback((raceId, key) => {
+    setPinned((p) => {
+      const arr = (p[raceId] || []).filter((k) => k !== key)
+      if (!(p[raceId] || []).includes(key)) arr.push(key)
+      return { ...p, [raceId]: arr }
+    })
+  }, [])
   const fetchingRef = useRef(false)
   const raceById = useMemo(() => Object.fromEntries(RACES.map((r) => [r.id, r])), [])
 
@@ -185,14 +229,21 @@ export default function App() {
         const raw = await fetchRaceJson(race.url)
         const parsed = parseRace(race, raw)
         nextData[race.id] = parsed
-        // geral: histórico do top 15 (gráfico mostra top 10 fixo)
+        // geral: histórico do top 15 + fixados (gráfico: fixados ou top 10)
         if (race.tipo !== 'senado') {
-          const top = parsed.candidatos.slice(0, 15)
+          const byKey = new Map(parsed.candidatos.map((c) => [c.key, c]))
+          const wanted = new Map()
+          for (const c of parsed.candidatos.slice(0, 15)) wanted.set(c.key, c)
+          for (const k of pinnedRef.current[race.id] || []) {
+            const c = byKey.get(k)
+            if (c) wanted.set(k, c)
+          }
+          const snapCands = [...wanted.values()]
           const votes = {}
           const pctTse = {}
           const share = {}
           const names = {}
-          for (const c of top) {
+          for (const c of snapCands) {
             votes[c.numero] = c.vap
             pctTse[c.numero] = c.pvapNum
             share[c.numero] = sharePct(c.vap, parsed.meta.validos || parsed.meta.totalVotos)
@@ -204,7 +255,7 @@ export default function App() {
             label,
             hg: parsed.meta.hg,
             dg: parsed.meta.dg,
-            hash: hashVotes(top),
+            hash: hashVotes(snapCands),
             votes,
             pct: pctTse,
             share,
@@ -318,7 +369,11 @@ export default function App() {
                 const list = parsed?.ranking || parsed?.candidatos || []
                 const isProp = race.tipo === 'proporcional'
                 const effHist = col.rankingOnly ? [] : effHistFor(raceId)
+                const byKey = new Map(list.map((c) => [c.key, c]))
+                const pinKeys = pinned[raceId] || []
+                const pinnedCands = pinKeys.map((k) => byKey.get(k)).filter(Boolean)
                 const top10 = list.slice(0, 10)
+                const chartCands = pinnedCands.length ? pinnedCands : top10
                 return (
                   <div key={raceId} className="sub-race" style={{ flex: 1, minHeight: 0 }}>
                     <div className="race-head">
@@ -327,6 +382,9 @@ export default function App() {
                     </div>
                     {errors[raceId] && !parsed && <div className="err">{errors[raceId]}</div>}
                     {parsed && <Summary meta={parsed.meta} />}
+                    {!col.rankingOnly && (
+                      <PinnedStrip cands={pinnedCands} onUnpin={(k) => togglePin(raceId, k)} />
+                    )}
                     <div style={{ flex: 1, minHeight: 60 }}>
                       <Virtuoso
                         style={{ height: '100%' }}
@@ -341,6 +399,8 @@ export default function App() {
                                 pos={i + 1}
                                 onClick={isProp ? () => toggleOpen(c.key) : undefined}
                                 selected={isProp && !!open[c.key]}
+                                onPin={col.rankingOnly ? undefined : () => togglePin(raceId, c.key)}
+                                isPinned={pinKeys.includes(c.key)}
                               />
                               {isProp && open[c.key] && <div style={{ marginTop: 4 }}><CeDetail parsed={parsed} cand={c} /></div>}
                             </div>
@@ -350,9 +410,9 @@ export default function App() {
                     </div>
                     {!col.rankingOnly && (
                       <>
-                        <div className="chart-title">Top 10 · {metric === 'pct' ? '% s/ válidos' : 'votos'} · {effHist.length} pts</div>
+                        <div className="chart-title">{pinnedCands.length ? `Fixados (${pinnedCands.length})` : 'Top 10'} · {metric === 'pct' ? '% s/ válidos' : 'votos'} · {effHist.length} pts</div>
                         <div className="chart-box" style={{ flex: 'none', height: 150 }}>
-                          <RaceChart visible={top10} history={effHist} metric={metric} />
+                          <RaceChart visible={chartCands} history={effHist} metric={metric} />
                         </div>
                       </>
                     )}
@@ -363,7 +423,7 @@ export default function App() {
           ))}
         </div>
 
-        <div className="footer">Panorama geral · Pres + Gov MG-SP + Fed + Est + Senado MG · top 10 fixo · QE = válidos/vagas · {refreshMs / 1000}s</div>
+        <div className="footer">Panorama geral · Pres + Gov MG + Gov SP + Fed + Est + Senado MG · fixe ☆ p/ filtrar o gráfico · {refreshMs / 1000}s</div>
       </div>
     </div>
   )

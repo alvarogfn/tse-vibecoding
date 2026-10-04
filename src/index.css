@@ -78,18 +78,21 @@ a { color: inherit; }
 
 .page { height: 100vh; display: flex; flex-direction: column; background: var(--bg); }
 .wrap { flex: 1; min-height: 0; max-width: 1920px; width: 100%; margin: 0 auto; padding: 8px 10px 6px; display: flex; flex-direction: column; }
-/* 5 colunas: Pres · Gov · Dep Fed · Dep Est · Senado */
+/* colunas lado a lado com scroll horizontal (estilo tweetdeck) */
 .grid-races {
   flex: 1;
   min-height: 0;
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  display: flex;
   gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 4px;
 }
+.grid-races::-webkit-scrollbar { height: 8px; }
+.grid-races::-webkit-scrollbar-thumb { background: var(--accent-dim); border-radius: 4px; }
+.grid-races::-webkit-scrollbar-track { background: #000; }
 @media (max-width: 1200px) {
-  body { overflow: auto; }
-  .page { height: auto; }
-  .grid-races { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .column { flex-basis: 280px; width: 280px; }
 }
 
 .column {
@@ -98,7 +101,8 @@ a { color: inherit; }
   border-top: 3px solid var(--accent);
   border-radius: var(--radius);
   padding: 8px;
-  min-width: 0;
+  width: 300px;
+  flex: 0 0 300px;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -166,6 +170,45 @@ a { color: inherit; }
   overflow-wrap: break-word;
 }
 .ce-detail b { color: var(--accent); }
+.pin-btn {
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0 2px;
+  flex: none;
+  line-height: 1;
+}
+.pin-btn:hover { color: var(--accent); }
+.pin-btn.on { color: var(--accent); }
+.pinned-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 2px 0 6px;
+}
+.pin-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #1c1a05;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  border-radius: 12px;
+  padding: 1px 2px 1px 6px;
+  font-size: 10px;
+  font-weight: 700;
+}
+.pin-chip button {
+  background: transparent;
+  border: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0 3px;
+}
 .avatar {
   width: 26px; height: 26px; border-radius: 50%;
   object-fit: cover; background: #000; flex: none;

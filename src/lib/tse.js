@@ -62,10 +62,11 @@ export const RACES = [
   },
 ]
 
-// Colunas do painel (ordem pedida pelo usuário)
+// Colunas do painel — gov MG e SP separados (6 colunas, scroll horizontal)
 export const COLUMNS = [
   { key: 'pres', titulo: 'Presidente', races: ['pres-br'] },
-  { key: 'gov', titulo: 'Governador', races: ['gov-mg', 'gov-sp'] },
+  { key: 'govmg', titulo: 'Governador MG', races: ['gov-mg'] },
+  { key: 'govsp', titulo: 'Governador SP', races: ['gov-sp'] },
   { key: 'fed', titulo: 'Dep. Federal', races: ['depfed-mg'] },
   { key: 'est', titulo: 'Dep. Estadual', races: ['depest-mg'] },
   { key: 'sen', titulo: 'Senado MG · ranking', races: ['sen-mg'], rankingOnly: true },

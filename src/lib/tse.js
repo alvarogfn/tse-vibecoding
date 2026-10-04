@@ -185,6 +185,63 @@ export function sharePct(vap, validos) {
   return (vap / validos) * 100
 }
 
+export const UFS = [
+  ['ac', 'Acre'], ['al', 'Alagoas'], ['ap', 'Amapá'], ['am', 'Amazonas'],
+  ['ba', 'Bahia'], ['ce', 'Ceará'], ['df', 'Distrito Federal'], ['es', 'Espírito Santo'],
+  ['go', 'Goiás'], ['ma', 'Maranhão'], ['mt', 'Mato Grosso'], ['ms', 'Mato Grosso do Sul'],
+  ['mg', 'Minas Gerais'], ['pa', 'Pará'], ['pb', 'Paraíba'], ['pr', 'Paraná'],
+  ['pe', 'Pernambuco'], ['pi', 'Piauí'], ['rj', 'Rio de Janeiro'], ['rn', 'Rio Grande do Norte'],
+  ['rs', 'Rio Grande do Sul'], ['ro', 'Rondônia'], ['rr', 'Roraima'], ['sc', 'Santa Catarina'],
+  ['sp', 'São Paulo'], ['se', 'Sergipe'], ['to', 'Tocantins'],
+]
+
+// Baixa os 3 cargos de um estado (fed 6, est 7, sen 5). Cargo ausente (ex. DF estadual) vira null.
+export async function fetchUFCargos(uf) {
+  const out = { uf }
+  for (const [key, cargo] of [['fed', 6], ['est', 7], ['sen', 5]]) {
+    const url = `https://resultados.tse.jus.br/oficial/ele2026/6259/dados/${uf}/${uf}-c${String(cargo).padStart(4, '0')}-e006259-u.jws`
+    try {
+      const raw = await fetchRaceJson(url)
+      out[key] = parseRace({ ele: '6259', ciclo: 'ele2026', ufFoto: uf }, raw)
+    } catch {
+      out[key] = null
+    }
+  }
+  return out
+}
+
+// Agrega por partido: prop (fed/est) usa QP=floor(partido/QE); senado usa top N vagas (parcial).
+// Retorna [{ pn, sg, fed, est, sen }] onde fed/est = {votes, legenda, qp, qe, vagas, top}
+// e sen = {seats, vagas, top}. top = {nome, numero, vap} do mais votado.
+export function aggregateParties(ufData) {
+  const map = {}
+  const ensure = (pn, sg) => (map[pn] || (map[pn] = { pn, sg, fed: null, est: null, sen: null }))
+  for (const cargo of ['fed', 'est']) {
+    const p = ufData[cargo]
+    if (!p) continue
+    for (const [pn, info] of Object.entries(p.partidos)) {
+      const e = ensure(pn, info.sg)
+      const top = p.ranking.find((c) => c.partidoNum === pn)
+      const q = calcQuociente(p.meta, p.partidos, pn)
+      e[cargo] = {
+        votes: q.partyVotes, legenda: q.legenda, qp: q.qp, qe: q.qe, vagas: q.vagas,
+        top: top ? { nome: top.nomeUrna, numero: top.numero, vap: top.vap } : null,
+      }
+    }
+  }
+  const s = ufData.sen
+  if (s) {
+    const vagas = s.meta.vagas || 0
+    const winners = new Set(s.ranking.slice(0, vagas).map((c) => c.key))
+    for (const c of s.ranking) {
+      const e = ensure(c.partidoNum, c.partido)
+      if (!e.sen) e.sen = { seats: 0, vagas, top: { nome: c.nomeUrna, numero: c.numero, vap: c.vap } }
+      if (winners.has(c.key)) e.sen.seats += 1
+    }
+  }
+  return Object.values(map)
+}
+
 function toInt(x) {
   if (x == null) return 0
   if (typeof x === 'number') return Math.floor(x)

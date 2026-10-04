@@ -12,7 +12,7 @@ import {
 import { Line } from 'react-chartjs-2'
 import { Virtuoso } from 'react-virtuoso'
 import FuzzySearch from 'fuzzy-search'
-import { RACES, COLUMNS, fetchRaceJson, parseRace, colorFor, fmtInt, calcQuociente, sharePct } from './lib/tse.js'
+import { RACES, COLUMNS, UFS, fetchRaceJson, fetchUFCargos, aggregateParties, parseRace, colorFor, fmtInt, calcQuociente, sharePct } from './lib/tse.js'
 import { loadHistory, appendSnapshot, clearHistory, hashVotes } from './lib/history.js'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend)
@@ -178,6 +178,51 @@ function CeDetail({ parsed, cand }) {
   )
 }
 
+function PartyCard({ p }) {
+  const seats = (p.fed?.qp || 0) + (p.est?.qp || 0) + (p.sen?.seats || 0)
+  const row = (label, d, topTxt) => (
+    <div className="party-row">
+      {label} · {d == null ? <span className="party-top">s/dados</span> : <><b>{topTxt}</b></>}
+    </div>
+  )
+  const topName = (t) => (t ? `${t.nome} ${fmtInt(t.vap)} (${t.numero})` : '—')
+  return (
+    <div
+      className="party"
+      title={`${p.sg} — Fed ${p.fed ? `${fmtInt(p.fed.votes)} votos, QP ${p.fed.qp}` : 's/dados'} · Est ${p.est ? `${fmtInt(p.est.votes)} votos, QP ${p.est.qp}` : 's/dados'} · Sen ${p.sen ? `${p.sen.seats}/${p.sen.vagas}` : 's/dados'}`}
+    >
+      <div className="party-name">{p.sg} – {p.pn} · <b>{seats} cad.</b></div>
+      {row('Fed', p.fed, `${p.fed.qp} cad · top ${topName(p.fed.top)}`)}
+      {row('Est', p.est, `${p.est.qp} cad · top ${topName(p.est.top)}`)}
+      {row('Sen', p.sen, `${p.sen.seats}/${p.sen.vagas} · top ${topName(p.sen.top)}`)}
+    </div>
+  )
+}
+
+function UFColumn({ uf, name, data, at }) {
+  const parties = useMemo(() => {
+    if (!data) return []
+    const agg = aggregateParties(data)
+    const seatsOf = (p) => (p.fed?.qp || 0) + (p.est?.qp || 0) + (p.sen?.seats || 0)
+    const votesOf = (p) => (p.fed?.votes || 0) + (p.est?.votes || 0)
+    return agg.sort((a, b) => seatsOf(b) - seatsOf(a) || votesOf(b) - votesOf(a))
+  }, [data])
+  const totalSeats = parties.reduce((a, p) => a + (p.fed?.qp || 0) + (p.est?.qp || 0) + (p.sen?.seats || 0), 0)
+  return (
+    <section className="column">
+      <div className="col-title">{name}</div>
+      <div className="summary" title="Cadeiras pelo QP (fed/est) + top vagas (sen) — parcial">
+        {data ? <><b>{totalSeats} cad.</b> · {parties.length} partidos · {at || ''}</> : 'carregando…'}
+      </div>
+      <div className="cards scroll" style={{ flex: 1, minHeight: 60 }}>
+        {parties.map((p) => (
+          <PartyCard key={p.pn} p={p} />
+        ))}
+      </div>
+    </section>
+  )
+}
+
 export default function App() {
   const [data, setData] = useState({})
   const [errors, setErrors] = useState({})
@@ -190,6 +235,8 @@ export default function App() {
   const [open, setOpen] = useState({}) // { [candKey]: true } — vários QE abertos
   const toggleOpen = useCallback((key) => setOpen((p) => ({ ...p, [key]: !p[key] })), [])
   const [search, setSearch] = useState({}) // { [raceId]: query } — busca por nome na coluna
+  const [ufs, setUfs] = useState({}) // { [uf]: {fed, est, sen} } — 1 coluna por estado
+  const [ufsMeta, setUfsMeta] = useState({ loading: true, done: 0, total: UFS.length, at: null })
   const [pinned, setPinned] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('tse-pinned-v1') || '{}')
@@ -296,6 +343,29 @@ export default function App() {
     }, 1000)
     return () => clearInterval(id)
   }, [auto, fetchAll])
+
+  // 27 estados × 3 cargos (81 arquivos) — ciclo lento separado, 180s, lotes de 5
+  const fetchUFs = useCallback(async () => {
+    const out = {}
+    for (let i = 0; i < UFS.length; i += 5) {
+      const batch = UFS.slice(i, i + 5)
+      const res = await Promise.all(batch.map(async ([uf]) => [uf, await fetchUFCargos(uf)]))
+      for (const [uf, r] of res) out[uf] = { ...r, at: new Date().toLocaleTimeString('pt-BR') }
+      setUfs((prev) => ({ ...prev, ...out }))
+      setUfsMeta({ loading: true, done: Math.min(i + 5, UFS.length), total: UFS.length, at: null })
+    }
+    setUfsMeta({ loading: false, done: UFS.length, total: UFS.length, at: new Date().toLocaleTimeString('pt-BR') })
+  }, [])
+
+  useEffect(() => {
+    fetchUFs()
+  }, [fetchUFs])
+
+  useEffect(() => {
+    if (!auto) return
+    const id = setInterval(fetchUFs, 180000)
+    return () => clearInterval(id)
+  }, [auto, fetchUFs])
 
   const totalHistoryPoints = useMemo(
     () => Object.values(history).reduce((a, arr) => a + (arr?.length || 0), 0),
@@ -449,9 +519,12 @@ export default function App() {
               })}
             </section>
           ))}
+          {UFS.map(([uf, name]) => (
+            <UFColumn key={uf} uf={uf} name={name} data={ufs[uf]} at={ufs[uf]?.at || ufsMeta.at} />
+          ))}
         </div>
 
-        <div className="footer">Panorama geral · Pres + Gov MG + Gov SP + Fed + Est + Senado MG · fixe ☆ p/ filtrar o gráfico · {refreshMs / 1000}s</div>
+        <div className="footer">Panorama geral + cadeiras por partido em cada UF (QP fed/est + top vagas sen) · fixe ☆ p/ filtrar o gráfico · {refreshMs / 1000}s · UFs 180s</div>
       </div>
     </div>
   )

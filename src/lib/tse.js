@@ -185,6 +185,27 @@ export function sharePct(vap, validos) {
   return (vap / validos) * 100
 }
 
+export const UFS = [
+  ['ac', 'Acre'], ['al', 'Alagoas'], ['ap', 'Amapá'], ['am', 'Amazonas'],
+  ['ba', 'Bahia'], ['ce', 'Ceará'], ['df', 'Distrito Federal'], ['es', 'Espírito Santo'],
+  ['go', 'Goiás'], ['ma', 'Maranhão'], ['mt', 'Mato Grosso'], ['ms', 'Mato Grosso do Sul'],
+  ['mg', 'Minas Gerais'], ['pa', 'Pará'], ['pb', 'Paraíba'], ['pr', 'Paraná'],
+  ['pe', 'Pernambuco'], ['pi', 'Piauí'], ['rj', 'Rio de Janeiro'], ['rn', 'Rio Grande do Norte'],
+  ['rs', 'Rio Grande do Sul'], ['ro', 'Rondônia'], ['rr', 'Roraima'], ['sc', 'Santa Catarina'],
+  ['sp', 'São Paulo'], ['se', 'Sergipe'], ['to', 'Tocantins'],
+]
+
+// Quociente do MISSÃO (14) num estado p/ dep federal (6) ou estadual (7).
+// Retorna {uf, ok, found, ...calcQuociente, parsed} — ok:false em 404 (ex. DF estadual).
+export async function fetchMissaoUF(uf, cargo) {
+  const url = `https://resultados.tse.jus.br/oficial/ele2026/6259/dados/${uf}/${uf}-c${String(cargo).padStart(4, '0')}-e006259-u.jws`
+  const raw = await fetchRaceJson(url)
+  const parsed = parseRace({ ele: '6259', ciclo: 'ele2026', ufFoto: uf }, raw)
+  const found = !!parsed.partidos['14']
+  const q = calcQuociente(parsed.meta, parsed.partidos, '14')
+  return { uf, ok: true, found, parsed, ...q }
+}
+
 function toInt(x) {
   if (x == null) return 0
   if (typeof x === 'number') return Math.floor(x)

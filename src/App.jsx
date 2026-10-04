@@ -11,7 +11,7 @@ import {
 } from 'chart.js'
 import { Line } from 'react-chartjs-2'
 import { Virtuoso } from 'react-virtuoso'
-import { RACES, COLUMNS, fetchRaceJson, parseRace, colorFor, fmtInt, calcQuociente, sharePct } from './lib/tse.js'
+import { RACES, COLUMNS, UFS, fetchRaceJson, fetchMissaoUF, parseRace, colorFor, fmtInt, calcQuociente, sharePct } from './lib/tse.js'
 import { loadHistory, appendSnapshot, clearHistory, hashVotes } from './lib/history.js'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend)
@@ -179,6 +179,72 @@ function PinnedStrip({ cands, onUnpin }) {
   )
 }
 
+const UFNAME = Object.fromEntries(UFS)
+
+function MissCard({ uf, r }) {
+  const name = UFNAME[uf] || uf.toUpperCase()
+  if (!r.ok) {
+    return (
+      <div className="cand" title={`${name} — arquivo indisponível no TSE`}>
+        <div className="cand-mid">
+          <div className="cand-name">{name}</div>
+          <div className="cand-party">sem dados</div>
+        </div>
+      </div>
+    )
+  }
+  if (!r.found) {
+    return (
+      <div className="cand" title={`${name} — MISSÃO sem candidatura apurada`}>
+        <div className="cand-mid">
+          <div className="cand-name">{name}</div>
+          <div className="cand-party">sem candidatura</div>
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div
+      className="cand"
+      title={`${name} — MISSÃO ${fmtInt(r.partyVotes)} votos (legenda ${fmtInt(r.legenda)}) · QE ${fmtInt(r.qe)} · QP ${r.qp} · ${r.vagas} vagas`}
+    >
+      <div className="cand-mid">
+        <div className="cand-name">{name}</div>
+        <div className="cand-party">{fmtInt(r.partyVotes)} votos · QE {fmtInt(r.qe)}</div>
+      </div>
+      <div className="cand-pct">
+        <b>{r.atingiu ? `${r.qp} cad.` : '0'}</b>
+        <span>{r.atingiu ? `+${fmtInt(r.faltam)} prox` : `faltam ${fmtInt(r.faltam)}`}</span>
+      </div>
+    </div>
+  )
+}
+
+function MissaoCol({ titulo, data, meta }) {
+  const rows = UFS.map(([uf]) => ({ uf, r: data[uf] })).filter((x) => x.r)
+  const okRows = rows.filter((x) => x.r.ok && x.r.found)
+  const totalQP = okRows.reduce((a, x) => a + x.r.qp, 0)
+  const sorted = [...rows].sort((a, b) => {
+    const qa = a.r.ok && a.r.found ? a.r.qp : -1
+    const qb = b.r.ok && b.r.found ? b.r.qp : -1
+    if (qb !== qa) return qb - qa
+    return (b.r.pctQE || -1) - (a.r.pctQE || -1)
+  })
+  return (
+    <section className="column">
+      <div className="col-title">{titulo}</div>
+      <div className="summary" title="Soma dos quocientes partidários do MISSÃO apurados até agora (parcial)">
+        MISSÃO: <b>{totalQP} cadeira(s)</b> · {meta.loading ? `lendo ${meta.done}/${meta.total}…` : `atualizado ${meta.at || '—'}`}
+      </div>
+      <div className="cards scroll" style={{ flex: 1, minHeight: 60 }}>
+        {sorted.map(({ uf, r }) => (
+          <MissCard key={uf} uf={uf} r={r} />
+        ))}
+      </div>
+    </section>
+  )
+}
+
 export default function App() {
   const [data, setData] = useState({})
   const [errors, setErrors] = useState({})
@@ -190,6 +256,7 @@ export default function App() {
   const [refreshMs, setRefreshMs] = useState(REFRESH_MS)
   const [open, setOpen] = useState({}) // { [candKey]: true } — vários QE abertos
   const toggleOpen = useCallback((key) => setOpen((p) => ({ ...p, [key]: !p[key] })), [])
+  const [missao, setMissao] = useState({ fed: {}, est: {}, at: null, loading: true, done: 0, total: UFS.length * 2 })
   const [pinned, setPinned] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('tse-pinned-v1') || '{}')
@@ -296,6 +363,58 @@ export default function App() {
     }, 1000)
     return () => clearInterval(id)
   }, [auto, fetchAll])
+
+  // MISSÃO em todos os estados (54 arquivos) — ciclo lento separado, 120s
+  const fetchMissao = useCallback(async () => {
+    const jobs = []
+    for (const [uf] of UFS) {
+      jobs.push(['fed', uf, 6], ['est', uf, 7])
+    }
+    const out = { fed: {}, est: {} }
+    for (let i = 0; i < jobs.length; i += 8) {
+      const batch = jobs.slice(i, i + 8)
+      const res = await Promise.all(
+        batch.map(async ([k, uf, cargo]) => {
+          try {
+            return [k, uf, await fetchMissaoUF(uf, cargo)]
+          } catch {
+            return [k, uf, { uf, ok: false }]
+          }
+        })
+      )
+      for (const [k, uf, r] of res) out[k][uf] = r
+      setMissao((m) => ({ ...m, done: Math.min(i + 8, jobs.length) }))
+    }
+    setMissao({ ...out, at: new Date().toLocaleTimeString('pt-BR'), loading: false, done: jobs.length, total: jobs.length })
+  }, [])
+
+  useEffect(() => {
+    fetchMissao()
+  }, [fetchMissao])
+
+  useEffect(() => {
+    if (!auto) return
+    const id = setInterval(fetchMissao, 120000)
+    return () => clearInterval(id)
+  }, [auto, fetchMissao])
+
+  // Mantém Higor (1420) e Luana (14000) fixados por padrão (só se nunca fixou nada)
+  const didDefaultPin = useRef(false)
+  useEffect(() => {
+    if (didDefaultPin.current) return
+    try {
+      if (localStorage.getItem('tse-pinned-v1') != null) {
+        didDefaultPin.current = true
+        return
+      }
+    } catch { /* sem localStorage */ }
+    const fed = data['depfed-mg']?.ranking?.find((c) => c.numero === '1420')
+    const est = data['depest-mg']?.ranking?.find((c) => c.numero === '14000')
+    if (fed && est) {
+      didDefaultPin.current = true
+      setPinned({ 'depfed-mg': [fed.key], 'depest-mg': [est.key] })
+    }
+  }, [data])
 
   const totalHistoryPoints = useMemo(
     () => Object.values(history).reduce((a, arr) => a + (arr?.length || 0), 0),
@@ -444,9 +563,11 @@ export default function App() {
               })}
             </section>
           ))}
+          <MissaoCol titulo="Missão · QE Estaduais" data={missao.est} meta={missao} />
+          <MissaoCol titulo="Missão · QE Federais" data={missao.fed} meta={missao} />
         </div>
 
-        <div className="footer">Panorama geral · Pres + Gov MG + Gov SP + Fed + Est + Senado MG · fixe ☆ p/ filtrar o gráfico · {refreshMs / 1000}s</div>
+        <div className="footer">Panorama geral + QE MISSÃO nos 26 estados + DF · fixe ☆ p/ filtrar o gráfico · geral {refreshMs / 1000}s · missão 120s</div>
       </div>
     </div>
   )

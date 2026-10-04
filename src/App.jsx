@@ -372,6 +372,10 @@ export default function App() {
                 const byKey = new Map(list.map((c) => [c.key, c]))
                 const pinKeys = pinned[raceId] || []
                 const pinnedCands = pinKeys.map((k) => byKey.get(k)).filter(Boolean)
+                const pinSet = new Set(pinKeys)
+                const rankPos = new Map(list.map((c, idx) => [c.key, idx + 1]))
+                // fixados no topo da lista (na ordem fixada), depois o ranking por votos
+                const sorted = [...pinnedCands, ...list.filter((c) => !pinSet.has(c.key))]
                 const top10 = list.slice(0, 10)
                 const chartCands = pinnedCands.length ? pinnedCands : top10
                 return (
@@ -388,7 +392,7 @@ export default function App() {
                     <div style={{ flex: 1, minHeight: 60 }}>
                       <Virtuoso
                         style={{ height: '100%' }}
-                        data={list}
+                        data={sorted}
                         computeItemKey={(_idx, c) => c.key}
                         itemContent={(i, c) => (
                           <>
@@ -396,11 +400,11 @@ export default function App() {
                               <CandCard
                                 c={c} i={i}
                                 validos={parsed?.meta?.validos} total={parsed?.meta?.totalVotos}
-                                pos={i + 1}
+                                pos={rankPos.get(c.key)}
                                 onClick={isProp ? () => toggleOpen(c.key) : undefined}
                                 selected={isProp && !!open[c.key]}
                                 onPin={col.rankingOnly ? undefined : () => togglePin(raceId, c.key)}
-                                isPinned={pinKeys.includes(c.key)}
+                                isPinned={pinSet.has(c.key)}
                               />
                               {isProp && open[c.key] && <div style={{ marginTop: 4 }}><CeDetail parsed={parsed} cand={c} /></div>}
                             </div>

@@ -253,6 +253,55 @@ class ColGuard extends React.Component {
   }
 }
 
+function BrazilColumn({ ufs, meta }) {
+  const rows = useMemo(() => {
+    const map = {}
+    for (const [uf] of UFS) {
+      const d = ufs[uf]
+      if (!d) continue
+      let agg = []
+      try {
+        agg = aggregateParties(d)
+      } catch {
+        continue
+      }
+      for (const p of agg) {
+        const e = map[p.pn] || (map[p.pn] = { pn: p.pn, sg: p.sg, fed: 0, est: 0, sen: 0, votes: 0 })
+        e.fed += p.fed?.qp || 0
+        e.est += p.est?.qp || 0
+        e.sen += p.sen?.seats || 0
+        e.votes += (p.fed?.votes || 0) + (p.est?.votes || 0)
+      }
+    }
+    const arr = Object.values(map)
+    const tot = (r) => r.fed + r.est + r.sen
+    return arr.sort((a, b) => tot(b) - tot(a) || b.votes - a.votes)
+  }, [ufs])
+  const totalSeats = rows.reduce((a, r) => a + r.fed + r.est + r.sen, 0)
+  return (
+    <section className="column">
+      <div className="col-title">Partidos · Brasil</div>
+      <div className="summary" title="Soma nacional: QPs (fed/est) + top vagas (sen) — parcial">
+        <b>{totalSeats} cad.</b> · {rows.length} partidos · {meta.loading ? `lendo ${meta.done}/${meta.total}…` : `atualizado ${meta.at || '—'}`}
+      </div>
+      <div className="cards scroll" style={{ flex: 1, minHeight: 60 }}>
+        {rows.map((r) => (
+          <div
+            key={r.pn}
+            className="party"
+            title={`${r.sg} — Fed ${r.fed} cad · Est ${r.est} cad · Sen ${r.sen} cad · ${fmtInt(r.votes)} votos (fed+est)`}
+          >
+            <div className="party-name">{r.sg} – {r.pn} · <b>{r.fed + r.est + r.sen} cad.</b></div>
+            <div className="party-row">Fed · <b>{r.fed} cad.</b></div>
+            <div className="party-row">Est · <b>{r.est} cad.</b></div>
+            <div className="party-row">Sen · <b>{r.sen} cad.</b></div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 export default function App() {
   const [data, setData] = useState({})
   const [errors, setErrors] = useState({})
@@ -549,6 +598,7 @@ export default function App() {
               })}
             </section>
           ))}
+          <BrazilColumn ufs={ufs} meta={ufsMeta} />
           {UFS.map(([uf, name]) => (
             <ColGuard key={uf} title={name}>
               <UFColumn uf={uf} name={name} data={ufs[uf]} at={ufs[uf]?.at || ufsMeta.at} />

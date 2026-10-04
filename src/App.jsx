@@ -324,7 +324,7 @@ export default function App() {
     <div className="page">
       <div className="topbar">
         <h1>Apuração 2026 — Tempo real</h1>
-        <div className="sub">panorama geral · top 10 · % s/ válidos · {refreshMs / 1000}s</div>
+        <div className="sub">panorama geral · fixe ☆ p/ ver o gráfico · {refreshMs / 1000}s</div>
         <div className="spacer" />
         <span className="badge">{auto ? `${countdown}s` : 'pausado'}</span>
         <span className="badge">{totalHistoryPoints} pts</span>
@@ -405,14 +405,16 @@ export default function App() {
                         ))}
                       </div>
                     )}
-                    {!col.rankingOnly && (
+                    {!col.rankingOnly && pinnedCands.length > 0 && (
                       <>
-                        <div className="chart-title">{pinnedCands.length ? `Fixados (${pinnedCands.length})` : 'Top 10'} · {metric === 'pct' ? '% s/ válidos' : 'votos'} · {effHist.length} pts</div>
+                        <div className="chart-title">Fixados ({pinnedCands.length}) · {metric === 'pct' ? '% s/ válidos' : 'votos'} · {effHist.length} pts</div>
                         <div className="chart-box" style={{ flex: 'none', height: 150 }}>
                           <RaceChart visible={chartCands} history={effHist} metric={metric} />
                         </div>
-                        <div className="chart-title">Ranking geral · {list.length}</div>
                       </>
+                    )}
+                    {!col.rankingOnly && (
+                      <div className="chart-title">Ranking geral · {list.length}</div>
                     )}
                     <div style={{ flex: 1, minHeight: 60 }}>
                       <Virtuoso

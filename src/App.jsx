@@ -11,6 +11,7 @@ import {
 } from 'chart.js'
 import { Line } from 'react-chartjs-2'
 import { Virtuoso } from 'react-virtuoso'
+import FuzzySearch from 'fuzzy-search'
 import { RACES, COLUMNS, fetchRaceJson, parseRace, colorFor, fmtInt, calcQuociente, sharePct } from './lib/tse.js'
 import { loadHistory, appendSnapshot, clearHistory, hashVotes } from './lib/history.js'
 
@@ -22,6 +23,18 @@ const GRID = '#27272a'
 
 function fmtPct(n) {
   return Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
+}
+
+// Busca aproximada (typo-tolerant) sobre a lista; sem query retorna tudo
+function fuzzyFilter(list, query, keys) {
+  const q = (query || '').trim()
+  if (!q) return list
+  try {
+    return new FuzzySearch(list, keys, { caseSensitive: false, sort: true }).search(q)
+  } catch {
+    const lq = q.toLowerCase()
+    return list.filter((c) => keys.some((k) => String(c[k] || '').toLowerCase().includes(lq)))
+  }
 }
 
 function Avatar({ src, name }) {
@@ -165,20 +178,6 @@ function CeDetail({ parsed, cand }) {
   )
 }
 
-function PinnedStrip({ cands, onUnpin }) {
-  if (!cands.length) return null
-  return (
-    <div className="pinned-strip" title="Fixados — só eles aparecem no gráfico">
-      {cands.map((c) => (
-        <span key={c.key} className="pin-chip" title={`${c.nomeFull} · ${c.partido}-${c.numero}`}>
-          ★ {c.numero}
-          <button onClick={() => onUnpin(c.key)} title="Desafixar">×</button>
-        </span>
-      ))}
-    </div>
-  )
-}
-
 export default function App() {
   const [data, setData] = useState({})
   const [errors, setErrors] = useState({})
@@ -190,6 +189,7 @@ export default function App() {
   const [refreshMs, setRefreshMs] = useState(REFRESH_MS)
   const [open, setOpen] = useState({}) // { [candKey]: true } — vários QE abertos
   const toggleOpen = useCallback((key) => setOpen((p) => ({ ...p, [key]: !p[key] })), [])
+  const [search, setSearch] = useState({}) // { [raceId]: query } — busca por nome na coluna
   const [pinned, setPinned] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('tse-pinned-v1') || '{}')
@@ -373,6 +373,8 @@ export default function App() {
                 const pinKeys = pinned[raceId] || []
                 const pinnedCands = pinKeys.map((k) => byKey.get(k)).filter(Boolean)
                 const rankPos = new Map(list.map((c, idx) => [c.key, idx + 1]))
+                const query = search[raceId] || ''
+                const filtered = fuzzyFilter(list, query, ['nomeUrna', 'nomeFull', 'numero', 'partido'])
                 const top10 = list.slice(0, 10)
                 const chartCands = pinnedCands.length ? pinnedCands : top10
                 return (
@@ -383,9 +385,12 @@ export default function App() {
                     </div>
                     {errors[raceId] && !parsed && <div className="err">{errors[raceId]}</div>}
                     {parsed && <Summary meta={parsed.meta} />}
-                    {!col.rankingOnly && (
-                      <PinnedStrip cands={pinnedCands} onUnpin={(k) => togglePin(raceId, k)} />
-                    )}
+                    <input
+                      className="search"
+                      placeholder="Buscar nome…"
+                      value={search[raceId] || ''}
+                      onChange={(e) => setSearch((p) => ({ ...p, [raceId]: e.target.value }))}
+                    />
                     {!col.rankingOnly && pinnedCands.length > 0 && (
                       <div className="cards" style={{ flex: 'none', maxHeight: 230, overflowY: 'auto', marginBottom: 6 }}>
                         <div className="chart-title">Fixados · {pinnedCands.length}</div>
@@ -419,7 +424,7 @@ export default function App() {
                     <div style={{ flex: 1, minHeight: 60 }}>
                       <Virtuoso
                         style={{ height: '100%' }}
-                        data={list}
+                        data={filtered}
                         computeItemKey={(_idx, c) => c.key}
                         itemContent={(i, c) => (
                           <>

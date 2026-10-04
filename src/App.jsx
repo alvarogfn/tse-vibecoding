@@ -5,17 +5,18 @@ import {
   LinearScale,
   PointElement,
   LineElement,
+  ArcElement,
   Title,
   Tooltip,
   Legend,
 } from 'chart.js'
-import { Line } from 'react-chartjs-2'
+import { Line, Pie } from 'react-chartjs-2'
 import { Virtuoso } from 'react-virtuoso'
 import FuzzySearch from 'fuzzy-search'
 import { RACES, COLUMNS, UFS, fetchRaceJson, fetchUFCargos, aggregateParties, parseRace, colorFor, fmtInt, calcQuociente, sharePct } from './lib/tse.js'
 import { loadHistory, appendSnapshot, clearHistory, hashVotes } from './lib/history.js'
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend)
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Title, Tooltip, Legend)
 
 const REFRESH_MS = 5000
 const AXIS = '#a1a1aa'
@@ -278,11 +279,46 @@ function BrazilColumn({ ufs, meta }) {
     return arr.sort((a, b) => tot(b) - tot(a) || b.votes - a.votes)
   }, [ufs])
   const totalSeats = rows.reduce((a, r) => a + r.fed + r.est + r.sen, 0)
+  const pieFor = (get) => {
+    const items = rows.filter((r) => get(r) > 0)
+    return {
+      labels: items.map((r) => r.sg),
+      datasets: [{
+        data: items.map((r) => get(r)),
+        backgroundColor: items.map((r, i) => colorFor(r.pn, i)),
+        borderColor: '#000',
+        borderWidth: 1,
+      }],
+    }
+  }
+  const pieOpts = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: (ctx) => ` ${ctx.label}: ${ctx.parsed} cad.` } },
+    },
+  }
+  const pies = [
+    ['FED', pieFor((r) => r.fed)],
+    ['EST', pieFor((r) => r.est)],
+    ['SEN', pieFor((r) => r.sen)],
+  ]
   return (
     <section className="column">
       <div className="col-title">Partidos · Brasil</div>
       <div className="summary" title="Soma nacional: QPs (fed/est) + top vagas (sen) — parcial">
         <b>{totalSeats} cad.</b> · {rows.length} partidos · {meta.loading ? `lendo ${meta.done}/${meta.total}…` : `atualizado ${meta.at || '—'}`}
+      </div>
+      <div style={{ display: 'flex', gap: 4, flex: 'none' }}>
+        {pies.map(([label, data]) => (
+          <div key={label} style={{ flex: 1, minWidth: 0 }}>
+            <div className="chart-title" style={{ textAlign: 'center', marginTop: 0 }}>{label}</div>
+            <div style={{ height: 104, position: 'relative' }}>
+              {data.labels.length ? <Pie data={data} options={pieOpts} /> : <div className="hint" style={{ textAlign: 'center' }}>—</div>}
+            </div>
+          </div>
+        ))}
       </div>
       <div className="cards scroll" style={{ flex: 1, minHeight: 60 }}>
         {rows.map((r) => (

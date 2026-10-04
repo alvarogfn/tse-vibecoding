@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -10,6 +10,7 @@ import {
   Legend,
 } from 'chart.js'
 import { Line } from 'react-chartjs-2'
+import { Virtuoso } from 'react-virtuoso'
 import { RACES, COLUMNS, fetchRaceJson, parseRace, colorFor, fmtInt, calcQuociente, sharePct } from './lib/tse.js'
 import { loadHistory, appendSnapshot, clearHistory, hashVotes } from './lib/history.js'
 
@@ -184,13 +185,14 @@ export default function App() {
         const raw = await fetchRaceJson(race.url)
         const parsed = parseRace(race, raw)
         nextData[race.id] = parsed
-        // ranking do senado: sem gráfico, não grava histórico
+        // geral: histórico do top 15 (gráfico mostra top 10 fixo)
         if (race.tipo !== 'senado') {
+          const top = parsed.candidatos.slice(0, 15)
           const votes = {}
           const pctTse = {}
           const share = {}
           const names = {}
-          for (const c of parsed.candidatos) {
+          for (const c of top) {
             votes[c.numero] = c.vap
             pctTse[c.numero] = c.pvapNum
             share[c.numero] = sharePct(c.vap, parsed.meta.validos || parsed.meta.totalVotos)
@@ -202,7 +204,7 @@ export default function App() {
             label,
             hg: parsed.meta.hg,
             dg: parsed.meta.dg,
-            hash: hashVotes(parsed.candidatos),
+            hash: hashVotes(top),
             votes,
             pct: pctTse,
             share,
@@ -271,7 +273,7 @@ export default function App() {
     <div className="page">
       <div className="topbar">
         <h1>Apuração 2026 — Tempo real</h1>
-        <div className="sub">foco + ranking geral · % s/ válidos · {refreshMs / 1000}s</div>
+        <div className="sub">panorama geral · top 10 · % s/ válidos · {refreshMs / 1000}s</div>
         <div className="spacer" />
         <span className="badge">{auto ? `${countdown}s` : 'pausado'}</span>
         <span className="badge">{totalHistoryPoints} pts</span>
@@ -313,57 +315,44 @@ export default function App() {
               {col.races.map((raceId) => {
                 const race = raceById[raceId]
                 const parsed = data[raceId]
-                const cands = parsed?.candidatos || []
-                if (col.rankingOnly) {
-                  return (
-                    <div key={raceId} className="sub-race" style={{ flex: 1, minHeight: 0 }}>
-                      <div className="race-head">
-                        <h2>{race.titulo}</h2>
-                        <div className="meta">{parsed ? `${parsed.meta.hg}` : '…'}</div>
-                      </div>
-                      {errors[raceId] && !parsed && <div className="err">{errors[raceId]}</div>}
-                      {parsed && <Summary meta={parsed.meta} />}
-                      <div className="cards scroll">
-                        {cands.map((c, i) => (
-                          <CandCard key={c.key} c={c} i={i} validos={parsed?.meta?.validos} total={parsed?.meta?.totalVotos} pos={i + 1} />
-                        ))}
-                      </div>
-                    </div>
-                  )
-                }
-                const effHist = effHistFor(raceId)
+                const list = parsed?.ranking || parsed?.candidatos || []
                 const isProp = race.tipo === 'proporcional'
-                const ranking = (parsed?.ranking || []).filter((c) => !(race.allow || []).includes(c.numero))
-                const rankPos = new Map((parsed?.ranking || []).map((c, idx) => [c.key, idx + 1]))
-                const depCard = (c, i, pos) => (
-                  <Fragment key={c.key}>
-                    <CandCard c={c} i={i} validos={parsed?.meta?.validos} total={parsed?.meta?.totalVotos} pos={pos} onClick={() => toggleOpen(c.key)} selected={!!open[c.key]} />
-                    {open[c.key] && <CeDetail parsed={parsed} cand={c} />}
-                  </Fragment>
-                )
+                const effHist = col.rankingOnly ? [] : effHistFor(raceId)
+                const top10 = list.slice(0, 10)
                 return (
-                  <div key={raceId} className="sub-race" style={isProp ? { flex: 1, minHeight: 0 } : undefined}>
+                  <div key={raceId} className="sub-race" style={{ flex: 1, minHeight: 0 }}>
                     <div className="race-head">
                       <h2>{race.titulo}</h2>
-                      <div className="meta">{parsed ? `${parsed.meta.hg} · ${effHist.length}` : '…'}</div>
+                      <div className="meta">{parsed ? `${parsed.meta.hg}${effHist.length ? ` · ${effHist.length}` : ''}` : '…'}</div>
                     </div>
                     {errors[raceId] && !parsed && <div className="err">{errors[raceId]}</div>}
                     {parsed && <Summary meta={parsed.meta} />}
-                    {parsed && isProp && <QuocienteLine parsed={parsed} />}
-                    <div className="cards">
-                      {cands.map((c, i) => (isProp ? depCard(c, i, rankPos.get(c.key)) : (
-                        <CandCard key={c.key} c={c} i={i} validos={parsed?.meta?.validos} total={parsed?.meta?.totalVotos} />
-                      )))}
+                    <div style={{ flex: 1, minHeight: 60 }}>
+                      <Virtuoso
+                        style={{ height: '100%' }}
+                        data={list}
+                        computeItemKey={(_idx, c) => c.key}
+                        itemContent={(i, c) => (
+                          <>
+                            <div style={{ paddingBottom: 4 }}>
+                              <CandCard
+                                c={c} i={i}
+                                validos={parsed?.meta?.validos} total={parsed?.meta?.totalVotos}
+                                pos={i + 1}
+                                onClick={isProp ? () => toggleOpen(c.key) : undefined}
+                                selected={isProp && !!open[c.key]}
+                              />
+                              {isProp && open[c.key] && <div style={{ marginTop: 4 }}><CeDetail parsed={parsed} cand={c} /></div>}
+                            </div>
+                          </>
+                        )}
+                      />
                     </div>
-                    <div className="chart-title">{metric === 'pct' ? '% s/ válidos' : 'votos'} · {effHist.length} pts</div>
-                    <div className="chart-box" style={isProp ? { flex: 'none', height: 170 } : undefined}>
-                      <RaceChart visible={cands} history={effHist} metric={metric} />
-                    </div>
-                    {isProp && parsed && (
+                    {!col.rankingOnly && (
                       <>
-                        <div className="chart-title">Ranking geral · {ranking.length} outros</div>
-                        <div className="cards scroll" style={{ flex: 1, minHeight: 80 }}>
-                          {ranking.map((c, i) => depCard(c, i, rankPos.get(c.key)))}
+                        <div className="chart-title">Top 10 · {metric === 'pct' ? '% s/ válidos' : 'votos'} · {effHist.length} pts</div>
+                        <div className="chart-box" style={{ flex: 'none', height: 150 }}>
+                          <RaceChart visible={top10} history={effHist} metric={metric} />
                         </div>
                       </>
                     )}
@@ -374,7 +363,7 @@ export default function App() {
           ))}
         </div>
 
-        <div className="footer">Pres 22/13/14 · Gov MG-SP 10/13 · Fed 1420 + ranking · Est 14000 + ranking · Senado MG geral · QE = válidos/vagas · {refreshMs / 1000}s</div>
+        <div className="footer">Panorama geral · Pres + Gov MG-SP + Fed + Est + Senado MG · top 10 fixo · QE = válidos/vagas · {refreshMs / 1000}s</div>
       </div>
     </div>
   )

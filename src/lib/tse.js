@@ -1,4 +1,4 @@
-// Ordem das colunas: 1 Pres · 2 Gov (MG+SP) · 3 Dep Fed · 4 Dep Est · 5 Senado ranking
+// Branch GERAL: panorama completo — sem allowlist, sem fixos (todos ranqueados)
 export const RACES = [
   {
     id: 'pres-br',
@@ -9,7 +9,6 @@ export const RACES = [
     subtitulo: 'Eleição Ordinária Federal - 2026',
     url: 'https://resultados.tse.jus.br/oficial/ele2026/6257/dados/br/br-c0001-e006257-u.jws',
     tipo: 'majoritario',
-    allow: ['22', '13', '14'],
   },
   {
     id: 'gov-mg',
@@ -20,7 +19,6 @@ export const RACES = [
     subtitulo: 'Eleição Ordinária Estadual - 2026',
     url: 'https://resultados.tse.jus.br/oficial/ele2026/6259/dados/mg/mg-c0003-e006259-u.jws',
     tipo: 'majoritario',
-    allow: ['10', '13'],
   },
   {
     id: 'gov-sp',
@@ -31,7 +29,6 @@ export const RACES = [
     subtitulo: 'Eleição Ordinária Estadual - 2026',
     url: 'https://resultados.tse.jus.br/oficial/ele2026/6259/dados/sp/sp-c0003-e006259-u.jws',
     tipo: 'majoritario',
-    allow: ['10', '13'],
   },
   {
     id: 'depfed-mg',
@@ -42,7 +39,6 @@ export const RACES = [
     subtitulo: 'Eleição Ordinária Estadual - 2026',
     url: 'https://resultados.tse.jus.br/oficial/ele2026/6259/dados/mg/mg-c0006-e006259-u.jws',
     tipo: 'proporcional',
-    allow: ['1420'],
   },
   {
     id: 'depest-mg',
@@ -53,7 +49,6 @@ export const RACES = [
     subtitulo: 'Eleição Ordinária Estadual - 2026',
     url: 'https://resultados.tse.jus.br/oficial/ele2026/6259/dados/mg/mg-c0007-e006259-u.jws',
     tipo: 'proporcional',
-    allow: ['14000'],
   },
   {
     id: 'sen-mg',

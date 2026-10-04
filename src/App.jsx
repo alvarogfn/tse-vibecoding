@@ -166,7 +166,7 @@ function CandCard({ c, i, validos, total, pos, onClick, selected, onPin, isPinne
 function CeDetail({ parsed, cand }) {
   const q = calcQuociente(parsed.meta, parsed.partidos, cand.partidoNum)
   const min = Math.ceil(q.qe * 0.1)
-  const okMin = q.qe > 0 && cand.vap >= q.qe * 0.1
+  const okMin = q.qe > 0 && cand.vap >= min
   return (
     <div className="ce-detail" title={`Partido ${fmtInt(q.partyVotes)} votos (legenda ${fmtInt(q.legenda)}) · QE ${fmtInt(q.qe)} · QP ${q.qp}`}>
       {q.sigla || cand.partido}: <b>{q.atingiu ? `${q.qp} cadeira(s)` : '0 cadeiras'} pelo QE</b>
@@ -391,7 +391,7 @@ export default function App() {
             secoes: parsed.meta?.s?.st,
           }
           const updated = await appendSnapshot(race.id, snap)
-          setHistory(updated)
+          if (updated) setHistory(updated)
         }
       } catch (err) {
         nextErr[race.id] = String(err?.message || err)
@@ -412,16 +412,17 @@ export default function App() {
   useEffect(() => {
     if (!auto) return
     const id = setInterval(() => {
-      setCountdown((c) => {
-        if (c <= 1) {
-          fetchAll()
-          return refreshMs / 1000
-        }
-        return c - 1
-      })
+      setCountdown((c) => (c <= 1 ? refreshMs / 1000 : c - 1))
     }, 1000)
     return () => clearInterval(id)
-  }, [auto, fetchAll])
+  }, [auto, refreshMs])
+
+  // fetch em timer próprio (updater acima é puro — só display)
+  useEffect(() => {
+    if (!auto) return
+    const id = setInterval(fetchAll, refreshMs)
+    return () => clearInterval(id)
+  }, [auto, refreshMs, fetchAll])
 
   // 27 estados × 3 cargos (81 arquivos) — ciclo lento separado, 180s, lotes de 5
   const fetchUFs = useCallback(async () => {
@@ -581,7 +582,7 @@ export default function App() {
                               <CandCard
                                 c={c} i={i}
                                 validos={parsed?.meta?.validos} total={parsed?.meta?.totalVotos}
-                                pos={i + 1}
+                                pos={rankPos.get(c.key)}
                                 onClick={isProp ? () => toggleOpen(c.key) : undefined}
                                 selected={isProp && !!open[c.key]}
                                 onPin={col.rankingOnly ? undefined : () => togglePin(raceId, c.key)}
@@ -600,7 +601,7 @@ export default function App() {
           ))}
           <BrazilColumn ufs={ufs} meta={ufsMeta} />
           {UFS.map(([uf, name]) => (
-            <ColGuard key={uf} title={name}>
+            <ColGuard key={`${uf}-${ufs[uf]?.at || 'loading'}`} title={name}>
               <UFColumn uf={uf} name={name} data={ufs[uf]} at={ufs[uf]?.at || ufsMeta.at} />
             </ColGuard>
           ))}

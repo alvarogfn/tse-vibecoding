@@ -21,8 +21,8 @@ export async function appendSnapshot(raceId, snap) {
   const all = (await loadHistory()) || {}
   const arr = all[raceId] || []
   const last = arr[arr.length - 1]
-  // evita duplicar se nada mudou (mesmo hg + mesmos votos)
-  if (last && last.hg === snap.hg && last.hash === snap.hash) return all
+  // evita duplicar se nada mudou (mesmo hg + mesmos votos) — null = sem push
+  if (last && last.hg === snap.hg && last.hash === snap.hash) return null
   arr.push(snap)
   while (arr.length > MAX_POINTS) arr.shift()
   all[raceId] = arr

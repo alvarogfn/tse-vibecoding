@@ -170,8 +170,8 @@ export function calcQuociente(meta, partidos, partidoNum) {
   const vagas = meta?.vagas || 0
   const validos = meta?.validos || 0
   const p = partidos?.[String(partidoNum)]
-  const partyVotes = p ? p.tvan || p.tvtn || 0 : 0
-  const legenda = p ? p.tvtl || 0 : 0
+  const partyVotes = p ? p.tvan ?? p.tvtn ?? 0 : 0
+  const legenda = p ? p.tvtl ?? 0 : 0
   const qp = qe > 0 ? Math.floor(partyVotes / qe) : 0
   // faltam p/ a próxima cadeira (com QP=0, é a 1ª)
   const faltam = qe > 0 ? Math.max(0, qe * (qp + 1) - partyVotes) : 0
@@ -195,18 +195,22 @@ export const UFS = [
   ['sp', 'São Paulo'], ['se', 'Sergipe'], ['to', 'Tocantins'],
 ]
 
-// Baixa os 3 cargos de um estado (fed 6, est 7, sen 5). Cargo ausente (ex. DF estadual) vira null.
+// Baixa os 3 cargos de um estado em paralelo (fed 6, est 7, sen 5). Cargo ausente (ex. DF estadual) vira null.
 export async function fetchUFCargos(uf) {
+  const jobs = [['fed', 6], ['est', 7], ['sen', 5]]
   const out = { uf }
-  for (const [key, cargo] of [['fed', 6], ['est', 7], ['sen', 5]]) {
-    const url = `https://resultados.tse.jus.br/oficial/ele2026/6259/dados/${uf}/${uf}-c${String(cargo).padStart(4, '0')}-e006259-u.jws`
-    try {
-      const raw = await fetchRaceJson(url)
-      out[key] = parseRace({ ele: '6259', ciclo: 'ele2026', ufFoto: uf }, raw)
-    } catch {
-      out[key] = null
-    }
-  }
+  const res = await Promise.all(
+    jobs.map(async ([key, cargo]) => {
+      const url = `https://resultados.tse.jus.br/oficial/ele2026/6259/dados/${uf}/${uf}-c${String(cargo).padStart(4, '0')}-e006259-u.jws`
+      try {
+        const raw = await fetchRaceJson(url)
+        return [key, parseRace({ ele: '6259', ciclo: 'ele2026', ufFoto: uf }, raw)]
+      } catch {
+        return [key, null]
+      }
+    })
+  )
+  for (const [key, parsed] of res) out[key] = parsed
   return out
 }
 
@@ -219,9 +223,10 @@ export function aggregateParties(ufData) {
   for (const cargo of ['fed', 'est']) {
     const p = ufData[cargo]
     if (!p) continue
+    const ranking = p.ranking || []
     for (const [pn, info] of Object.entries(p.partidos)) {
       const e = ensure(pn, info.sg)
-      const top = p.ranking.find((c) => c.partidoNum === pn)
+      const top = ranking.find((c) => c.partidoNum === pn)
       const q = calcQuociente(p.meta, p.partidos, pn)
       e[cargo] = {
         votes: q.partyVotes, legenda: q.legenda, qp: q.qp, qe: q.qe, vagas: q.vagas,
@@ -231,9 +236,10 @@ export function aggregateParties(ufData) {
   }
   const s = ufData.sen
   if (s) {
+    const sRanking = s.ranking || []
     const vagas = s.meta.vagas || 0
-    const winners = new Set(s.ranking.slice(0, vagas).map((c) => c.key))
-    for (const c of s.ranking) {
+    const winners = new Set(sRanking.slice(0, vagas).map((c) => c.key))
+    for (const c of sRanking) {
       const e = ensure(c.partidoNum, c.partido)
       if (!e.sen) e.sen = { seats: 0, vagas, top: { nome: c.nomeUrna, numero: c.numero, vap: c.vap } }
       if (winners.has(c.key)) e.sen.seats += 1

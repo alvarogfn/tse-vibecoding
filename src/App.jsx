@@ -280,12 +280,21 @@ function BrazilColumn({ ufs, meta }) {
   }, [ufs])
   const totalSeats = rows.reduce((a, r) => a + r.fed + r.est + r.sen, 0)
   const pieFor = (get) => {
-    const items = rows.filter((r) => get(r) > 0)
+    const items = rows.filter((r) => get(r) > 0).sort((a, b) => get(b) - get(a))
+    const top = items.slice(0, 5)
+    const rest = items.slice(5)
+    if (rest.length) {
+      top.push({
+        pn: 'outros',
+        sg: 'Outros',
+        __seats: rest.reduce((a, r) => a + get(r), 0),
+      })
+    }
     return {
-      labels: items.map((r) => r.sg),
+      labels: top.map((r) => r.sg),
       datasets: [{
-        data: items.map((r) => get(r)),
-        backgroundColor: items.map((r, i) => partyColor(r.pn, i)),
+        data: top.map((r) => (r.pn === 'outros' ? r.__seats : get(r))),
+        backgroundColor: top.map((r, i) => (r.pn === 'outros' ? '#52525b' : partyColor(r.pn, i))),
         borderColor: '#000',
         borderWidth: 1,
       }],

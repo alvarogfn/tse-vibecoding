@@ -195,17 +195,6 @@ export const UFS = [
   ['sp', 'São Paulo'], ['se', 'Sergipe'], ['to', 'Tocantins'],
 ]
 
-// Quociente do MISSÃO (14) num estado p/ dep federal (6) ou estadual (7).
-// Retorna {uf, ok, found, ...calcQuociente, parsed} — ok:false em 404 (ex. DF estadual).
-export async function fetchMissaoUF(uf, cargo) {
-  const url = `https://resultados.tse.jus.br/oficial/ele2026/6259/dados/${uf}/${uf}-c${String(cargo).padStart(4, '0')}-e006259-u.jws`
-  const raw = await fetchRaceJson(url)
-  const parsed = parseRace({ ele: '6259', ciclo: 'ele2026', ufFoto: uf }, raw)
-  const found = !!parsed.partidos['14']
-  const q = calcQuociente(parsed.meta, parsed.partidos, '14')
-  return { uf, ok: true, found, parsed, ...q }
-}
-
 // Baixa os 3 cargos de um estado em paralelo (fed 6, est 7, sen 5). Cargo ausente (ex. DF estadual) vira null.
 export async function fetchUFCargos(uf) {
   const jobs = [['fed', 6], ['est', 7], ['sen', 5]]

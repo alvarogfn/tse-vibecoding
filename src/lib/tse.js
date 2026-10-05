@@ -170,8 +170,8 @@ export function calcQuociente(meta, partidos, partidoNum) {
   const vagas = meta?.vagas || 0
   const validos = meta?.validos || 0
   const p = partidos?.[String(partidoNum)]
-  const partyVotes = p ? p.tvan || p.tvtn || 0 : 0
-  const legenda = p ? p.tvtl || 0 : 0
+  const partyVotes = p ? p.tvan ?? p.tvtn ?? 0 : 0
+  const legenda = p ? p.tvtl ?? 0 : 0
   const qp = qe > 0 ? Math.floor(partyVotes / qe) : 0
   // faltam p/ a próxima cadeira (com QP=0, é a 1ª)
   const faltam = qe > 0 ? Math.max(0, qe * (qp + 1) - partyVotes) : 0
@@ -206,6 +206,59 @@ export async function fetchMissaoUF(uf, cargo) {
   return { uf, ok: true, found, parsed, ...q }
 }
 
+// Baixa os 3 cargos de um estado em paralelo (fed 6, est 7, sen 5). Cargo ausente (ex. DF estadual) vira null.
+export async function fetchUFCargos(uf) {
+  const jobs = [['fed', 6], ['est', 7], ['sen', 5]]
+  const out = { uf }
+  const res = await Promise.all(
+    jobs.map(async ([key, cargo]) => {
+      const url = `https://resultados.tse.jus.br/oficial/ele2026/6259/dados/${uf}/${uf}-c${String(cargo).padStart(4, '0')}-e006259-u.jws`
+      try {
+        const raw = await fetchRaceJson(url)
+        return [key, parseRace({ ele: '6259', ciclo: 'ele2026', ufFoto: uf }, raw)]
+      } catch {
+        return [key, null]
+      }
+    })
+  )
+  for (const [key, parsed] of res) out[key] = parsed
+  return out
+}
+
+// Agrega por partido: prop (fed/est) usa QP=floor(partido/QE); senado usa top N vagas (parcial).
+// Retorna [{ pn, sg, fed, est, sen }] onde fed/est = {votes, legenda, qp, qe, vagas, top}
+// e sen = {seats, vagas, top}. top = {nome, numero, vap} do mais votado.
+export function aggregateParties(ufData) {
+  const map = {}
+  const ensure = (pn, sg) => (map[pn] || (map[pn] = { pn, sg, fed: null, est: null, sen: null }))
+  for (const cargo of ['fed', 'est']) {
+    const p = ufData[cargo]
+    if (!p) continue
+    const ranking = p.ranking || []
+    for (const [pn, info] of Object.entries(p.partidos)) {
+      const e = ensure(pn, info.sg)
+      const top = ranking.find((c) => c.partidoNum === pn)
+      const q = calcQuociente(p.meta, p.partidos, pn)
+      e[cargo] = {
+        votes: q.partyVotes, legenda: q.legenda, qp: q.qp, qe: q.qe, vagas: q.vagas,
+        top: top ? { nome: top.nomeUrna, numero: top.numero, vap: top.vap } : null,
+      }
+    }
+  }
+  const s = ufData.sen
+  if (s) {
+    const sRanking = s.ranking || []
+    const vagas = s.meta.vagas || 0
+    const winners = new Set(sRanking.slice(0, vagas).map((c) => c.key))
+    for (const c of sRanking) {
+      const e = ensure(c.partidoNum, c.partido)
+      if (!e.sen) e.sen = { seats: 0, vagas, top: { nome: c.nomeUrna, numero: c.numero, vap: c.vap } }
+      if (winners.has(c.key)) e.sen.seats += 1
+    }
+  }
+  return Object.values(map)
+}
+
 function toInt(x) {
   if (x == null) return 0
   if (typeof x === 'number') return Math.floor(x)
@@ -223,6 +276,42 @@ export function colorFor(numero, index) {
   const s = String(numero)
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0
   return PALETTE[h % PALETTE.length] || PALETTE[index % PALETTE.length]
+}
+
+// Cores usuais das legendas (p/ pizzas e destaques); fallback = colorFor
+export const PARTY_COLORS = {
+  '10': '#003B71', // REPUBLICANOS
+  '11': '#0091DA', // PP
+  '12': '#004B8D', // PDT
+  '13': '#DA291C', // PT
+  '14': '#FACC15', // MISSÃO
+  '15': '#00A651', // MDB
+  '16': '#E30613', // PSTU
+  '18': '#009444', // REDE
+  '20': '#00A651', // PODE
+  '21': '#E30613', // PCB
+  '22': '#002776', // PL
+  '23': '#EC008C', // CIDADANIA
+  '25': '#7B2D8E', // PRD
+  '27': '#0091DA', // DC
+  '29': '#E30613', // PCO
+  '30': '#F26522', // NOVO
+  '33': '#7B2D8E', // MOBILIZA
+  '36': '#00A651', // AGIR
+  '40': '#FDB913', // PSB
+  '43': '#078930', // PV
+  '44': '#1B2A6B', // UNIÃO
+  '45': '#008ACB', // PSDB
+  '50': '#D52B1E', // PSOL
+  '55': '#0F4C81', // PSD
+  '65': '#DA291C', // PCdoB
+  '70': '#F26522', // AVANTE
+  '77': '#F7941E', // SOLIDARIEDADE
+  '80': '#9CA3AF', // UP (cinza — preto some no fundo)
+}
+
+export function partyColor(pn, index = 0) {
+  return PARTY_COLORS[String(pn)] || colorFor(pn, index)
 }
 
 export function fmtInt(n) {

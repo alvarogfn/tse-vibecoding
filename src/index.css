@@ -175,6 +175,20 @@ a { color: inherit; }
   overflow-wrap: break-word;
 }
 .ce-detail b { color: var(--accent); }
+.party {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 5px 6px;
+  background: var(--card2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.party-name { font-weight: 800; font-size: 11px; color: var(--accent); text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.party-name b { color: #fff; }
+.party-row { font-size: 10px; color: #e7e5e4; line-height: 1.45; }
+.party-row b { color: #fff; }
+.party-top { color: var(--muted); }
 .pin-btn {
   background: transparent;
   border: 0;

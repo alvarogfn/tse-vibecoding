@@ -1,21 +1,22 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
   PointElement,
   LineElement,
+  ArcElement,
   Title,
   Tooltip,
   Legend,
 } from 'chart.js'
-import { Line } from 'react-chartjs-2'
+import { Line, Pie } from 'react-chartjs-2'
 import { Virtuoso } from 'react-virtuoso'
 import FuzzySearch from 'fuzzy-search'
-import { RACES, COLUMNS, UFS, fetchRaceJson, fetchMissaoUF, parseRace, colorFor, fmtInt, calcQuociente, sharePct } from './lib/tse.js'
+import { RACES, COLUMNS, UFS, fetchRaceJson, fetchMissaoUF, fetchUFCargos, aggregateParties, parseRace, colorFor, partyColor, fmtInt, calcQuociente, sharePct } from './lib/tse.js'
 import { loadHistory, appendSnapshot, clearHistory, hashVotes } from './lib/history.js'
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend)
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Title, Tooltip, Legend)
 
 const REFRESH_MS = 5000
 const AXIS = '#a1a1aa'
@@ -166,7 +167,7 @@ function CandCard({ c, i, validos, total, pos, onClick, selected, onPin, isPinne
 function CeDetail({ parsed, cand }) {
   const q = calcQuociente(parsed.meta, parsed.partidos, cand.partidoNum)
   const min = Math.ceil(q.qe * 0.1)
-  const okMin = q.qe > 0 && cand.vap >= q.qe * 0.1
+  const okMin = q.qe > 0 && cand.vap >= min
   return (
     <div className="ce-detail" title={`Partido ${fmtInt(q.partyVotes)} votos (legenda ${fmtInt(q.legenda)}) · QE ${fmtInt(q.qe)} · QP ${q.qp}`}>
       {q.sigla || cand.partido}: <b>{q.atingiu ? `${q.qp} cadeira(s)` : '0 cadeiras'} pelo QE</b>
@@ -219,6 +220,174 @@ function MissCard({ uf, r }) {
   )
 }
 
+function PartyCard({ p }) {
+  const seats = (p.fed?.qp || 0) + (p.est?.qp || 0) + (p.sen?.seats || 0)
+  const topName = (t) => (t ? `${t.nome} ${fmtInt(t.vap)} (${t.numero})` : '—')
+  const fedTxt = p.fed ? `${p.fed.qp} cad · top ${topName(p.fed.top)}` : null
+  const estTxt = p.est ? `${p.est.qp} cad · top ${topName(p.est.top)}` : null
+  const senTxt = p.sen ? `${p.sen.seats}/${p.sen.vagas} · top ${topName(p.sen.top)}` : null
+  const row = (label, txt) => (
+    <div className="party-row">
+      {label} · {txt == null ? <span className="party-top">s/dados</span> : <b>{txt}</b>}
+    </div>
+  )
+  return (
+    <div
+      className="party"
+      title={`${p.sg} — Fed ${p.fed ? `${fmtInt(p.fed.votes)} votos, QP ${p.fed.qp}` : 's/dados'} · Est ${p.est ? `${fmtInt(p.est.votes)} votos, QP ${p.est.qp}` : 's/dados'} · Sen ${p.sen ? `${p.sen.seats}/${p.sen.vagas}` : 's/dados'}`}
+    >
+      <div className="party-name">{p.sg} – {p.pn} · <b>{seats} cad.</b></div>
+      {row('Fed', fedTxt)}
+      {row('Est', estTxt)}
+      {row('Sen', senTxt)}
+    </div>
+  )
+}
+
+function UFColumn({ uf, name, data, at }) {
+  const parties = useMemo(() => {
+    if (!data) return []
+    let agg = []
+    try {
+      agg = aggregateParties(data)
+    } catch {
+      return []
+    }
+    const seatsOf = (p) => (p.fed?.qp || 0) + (p.est?.qp || 0) + (p.sen?.seats || 0)
+    const votesOf = (p) => (p.fed?.votes || 0) + (p.est?.votes || 0)
+    return agg.sort((a, b) => seatsOf(b) - seatsOf(a) || votesOf(b) - votesOf(a))
+  }, [data])
+  const totalSeats = parties.reduce((a, p) => a + (p.fed?.qp || 0) + (p.est?.qp || 0) + (p.sen?.seats || 0), 0)
+  return (
+    <section className="column">
+      <div className="col-title">{name}</div>
+      <div className="summary" title="Cadeiras pelo QP (fed/est) + top vagas (sen) — parcial">
+        {data ? <><b>{totalSeats} cad.</b> · {parties.length} partidos · {at || ''}</> : 'carregando…'}
+      </div>
+      <div className="cards scroll" style={{ flex: 1, minHeight: 60 }}>
+        {parties.map((p) => (
+          <PartyCard key={p.pn} p={p} />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+// Uma coluna com erro nunca mais apaga o painel inteiro
+class ColGuard extends React.Component {
+  constructor(p) {
+    super(p)
+    this.state = { err: null }
+  }
+  static getDerivedStateFromError(err) {
+    return { err: String(err?.message || err) }
+  }
+  render() {
+    if (this.state.err) {
+      return (
+        <section className="column">
+          <div className="col-title">{this.props.title}</div>
+          <div className="err">Falha nesta coluna: {this.state.err}</div>
+        </section>
+      )
+    }
+    return this.props.children
+  }
+}
+
+function BrazilColumn({ ufs, meta }) {
+  const rows = useMemo(() => {
+    const map = {}
+    for (const [uf] of UFS) {
+      const d = ufs[uf]
+      if (!d) continue
+      let agg = []
+      try {
+        agg = aggregateParties(d)
+      } catch {
+        continue
+      }
+      for (const p of agg) {
+        const e = map[p.pn] || (map[p.pn] = { pn: p.pn, sg: p.sg, fed: 0, est: 0, sen: 0, votes: 0 })
+        e.fed += p.fed?.qp || 0
+        e.est += p.est?.qp || 0
+        e.sen += p.sen?.seats || 0
+        e.votes += (p.fed?.votes || 0) + (p.est?.votes || 0)
+      }
+    }
+    const arr = Object.values(map)
+    const tot = (r) => r.fed + r.est + r.sen
+    return arr.sort((a, b) => tot(b) - tot(a) || b.votes - a.votes)
+  }, [ufs])
+  const totalSeats = rows.reduce((a, r) => a + r.fed + r.est + r.sen, 0)
+  const pieFor = (get) => {
+    const items = rows.filter((r) => get(r) > 0).sort((a, b) => get(b) - get(a))
+    const top = items.slice(0, 5)
+    const rest = items.slice(5)
+    if (rest.length) {
+      top.push({
+        pn: 'outros',
+        sg: 'Outros',
+        __seats: rest.reduce((a, r) => a + get(r), 0),
+      })
+    }
+    return {
+      labels: top.map((r) => r.sg),
+      datasets: [{
+        data: top.map((r) => (r.pn === 'outros' ? r.__seats : get(r))),
+        backgroundColor: top.map((r, i) => (r.pn === 'outros' ? '#52525b' : partyColor(r.pn, i))),
+        borderColor: '#000',
+        borderWidth: 1,
+      }],
+    }
+  }
+  const pieOpts = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: true, position: 'right', labels: { boxWidth: 8, font: { size: 9 }, color: '#fafafa' } },
+      tooltip: { callbacks: { label: (ctx) => ` ${ctx.label}: ${ctx.parsed} cad.` } },
+    },
+  }
+  const pies = [
+    ['FED · cadeiras por partido', pieFor((r) => r.fed)],
+    ['EST · cadeiras por partido', pieFor((r) => r.est)],
+    ['SEN · cadeiras por partido', pieFor((r) => r.sen)],
+  ]
+  return (
+    <section className="column">
+      <div className="col-title">Partidos · Brasil</div>
+      <div className="summary" title="Soma nacional: QPs (fed/est) + top vagas (sen) — parcial">
+        <b>{totalSeats} cad.</b> · {rows.length} partidos · {meta.loading ? `lendo ${meta.done}/${meta.total}…` : `atualizado ${meta.at || '—'}`}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 'none' }}>
+        {pies.map(([label, data]) => (
+          <div key={label}>
+            <div className="chart-title" style={{ marginTop: 0 }}>{label}</div>
+            <div style={{ height: 170, position: 'relative' }}>
+              {data.labels.length ? <Pie data={data} options={pieOpts} /> : <div className="hint" style={{ textAlign: 'center' }}>—</div>}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="cards scroll" style={{ flex: 1, minHeight: 60 }}>
+        {rows.map((r) => (
+          <div
+            key={r.pn}
+            className="party"
+            title={`${r.sg} — Fed ${r.fed} cad · Est ${r.est} cad · Sen ${r.sen} cad · ${fmtInt(r.votes)} votos (fed+est)`}
+          >
+            <div className="party-name">{r.sg} – {r.pn} · <b>{r.fed + r.est + r.sen} cad.</b></div>
+            <div className="party-row">Fed · <b>{r.fed} cad.</b></div>
+            <div className="party-row">Est · <b>{r.est} cad.</b></div>
+            <div className="party-row">Sen · <b>{r.sen} cad.</b></div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function MissaoCol({ titulo, data, meta }) {
   const [q, setQ] = useState('')
   const pool = UFS.map(([uf]) => ({ uf, name: UFNAME[uf] || uf, r: data[uf] })).filter((x) => x.r)
@@ -265,6 +434,8 @@ export default function App() {
   const toggleOpen = useCallback((key) => setOpen((p) => ({ ...p, [key]: !p[key] })), [])
   const [search, setSearch] = useState({}) // { [raceId]: query } — busca por nome na coluna
   const [missao, setMissao] = useState({ fed: {}, est: {}, at: null, loading: true, done: 0, total: UFS.length * 2 })
+  const [ufs, setUfs] = useState({}) // { [uf]: {fed, est, sen} } — 1 coluna por estado
+  const [ufsMeta, setUfsMeta] = useState({ loading: true, done: 0, total: UFS.length, at: null })
   const [pinned, setPinned] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('tse-pinned-v1') || '{}')
@@ -340,7 +511,7 @@ export default function App() {
             secoes: parsed.meta?.s?.st,
           }
           const updated = await appendSnapshot(race.id, snap)
-          setHistory(updated)
+          if (updated) setHistory(updated)
         }
       } catch (err) {
         nextErr[race.id] = String(err?.message || err)
@@ -361,16 +532,40 @@ export default function App() {
   useEffect(() => {
     if (!auto) return
     const id = setInterval(() => {
-      setCountdown((c) => {
-        if (c <= 1) {
-          fetchAll()
-          return refreshMs / 1000
-        }
-        return c - 1
-      })
+      setCountdown((c) => (c <= 1 ? refreshMs / 1000 : c - 1))
     }, 1000)
     return () => clearInterval(id)
-  }, [auto, fetchAll])
+  }, [auto, refreshMs])
+
+  // fetch em timer próprio (updater acima é puro — só display)
+  useEffect(() => {
+    if (!auto) return
+    const id = setInterval(fetchAll, refreshMs)
+    return () => clearInterval(id)
+  }, [auto, refreshMs, fetchAll])
+
+  // 27 estados × 3 cargos (81 arquivos) — ciclo lento separado, 180s, lotes de 5
+  const fetchUFs = useCallback(async () => {
+    const out = {}
+    for (let i = 0; i < UFS.length; i += 5) {
+      const batch = UFS.slice(i, i + 5)
+      const res = await Promise.all(batch.map(async ([uf]) => [uf, await fetchUFCargos(uf)]))
+      for (const [uf, r] of res) out[uf] = { ...r, at: new Date().toLocaleTimeString('pt-BR') }
+      setUfs((prev) => ({ ...prev, ...out }))
+      setUfsMeta({ loading: true, done: Math.min(i + 5, UFS.length), total: UFS.length, at: null })
+    }
+    setUfsMeta({ loading: false, done: UFS.length, total: UFS.length, at: new Date().toLocaleTimeString('pt-BR') })
+  }, [])
+
+  useEffect(() => {
+    fetchUFs()
+  }, [fetchUFs])
+
+  useEffect(() => {
+    if (!auto) return
+    const id = setInterval(fetchUFs, 180000)
+    return () => clearInterval(id)
+  }, [auto, fetchUFs])
 
   // MISSÃO em todos os estados (54 arquivos) — ciclo lento separado, 120s
   const fetchMissao = useCallback(async () => {
@@ -576,11 +771,17 @@ export default function App() {
               })}
             </section>
           ))}
+          <BrazilColumn ufs={ufs} meta={ufsMeta} />
+          {UFS.map(([uf, name]) => (
+            <ColGuard key={`${uf}-${ufs[uf]?.at || 'loading'}`} title={name}>
+              <UFColumn uf={uf} name={name} data={ufs[uf]} at={ufs[uf]?.at || ufsMeta.at} />
+            </ColGuard>
+          ))}
           <MissaoCol titulo="Missão · QE Estaduais" data={missao.est} meta={missao} />
           <MissaoCol titulo="Missão · QE Federais" data={missao.fed} meta={missao} />
         </div>
 
-        <div className="footer">Panorama geral + QE MISSÃO nos 26 estados + DF · fixe ☆ p/ filtrar o gráfico · geral {refreshMs / 1000}s · missão 120s</div>
+        <div className="footer">Panorama geral + cadeiras por partido/UF + QE MISSÃO · fixe ☆ p/ filtrar o gráfico · {refreshMs / 1000}s · UFs 180s · missão 120s</div>
       </div>
     </div>
   )

@@ -1,9 +1,10 @@
-import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import UnoCSS from 'unocss/vite'
+import { defineConfig } from 'vite'
 
 export default defineConfig({
   base: '/tse-vibecoding/',
-  plugins: [react()],
+  plugins: [UnoCSS(), react()],
   server: {
     port: 5173
   }

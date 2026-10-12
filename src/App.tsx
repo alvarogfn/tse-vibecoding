@@ -10,11 +10,15 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js'
+import type { ChartData, ChartDataset, ChartOptions, TooltipItem } from 'chart.js'
 import { Line, Pie } from 'react-chartjs-2'
 import { Virtuoso } from 'react-virtuoso'
 import FuzzySearch from 'fuzzy-search'
+import { Link } from 'react-router'
 import { RACES, COLUMNS, UFS, fetchRaceJson, fetchUFCargos, aggregateParties, parseRace, colorFor, partyColor, fmtInt, calcQuociente, sharePct } from './lib/tse.js'
+import type { Candidate, ParsedMeta, ParsedRace, AggParty, UFData, Race } from './lib/tse.js'
 import { loadHistory, appendSnapshot, clearHistory, hashVotes } from './lib/history.js'
+import type { Snapshot, HistoryMap } from './lib/history.js'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Title, Tooltip, Legend)
 
@@ -22,30 +26,34 @@ const REFRESH_MS = 5000
 const AXIS = '#a1a1aa'
 const GRID = '#27272a'
 
-function fmtPct(n) {
+type Metric = 'pct' | 'votos'
+
+function fmtPct(n: number | null | undefined): string {
   return Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
 }
 
 // Busca aproximada (typo-tolerant) sobre a lista; sem query retorna tudo
-function fuzzyFilter(list, query, keys) {
+function fuzzyFilter(list: Candidate[], query: string, keys: string[]): Candidate[] {
   const q = (query || '').trim()
   if (!q) return list
   try {
-    return new FuzzySearch(list, keys, { caseSensitive: false, sort: true }).search(q)
+    return new FuzzySearch<Candidate>(list, keys, { caseSensitive: false, sort: true }).search(q)
   } catch {
     const lq = q.toLowerCase()
-    return list.filter((c) => keys.some((k) => String(c[k] || '').toLowerCase().includes(lq)))
+    return list.filter((c) =>
+      keys.some((k) => String((c as unknown as Record<string, unknown>)[k] ?? '').toLowerCase().includes(lq)),
+    )
   }
 }
 
 // 100% apurado = seções totalizadas (pst) chegou a 100
-function isComplete(parsed) {
+function isComplete(parsed: ParsedRace | null | undefined): boolean {
   const s = parsed?.meta?.s
   if (!s) return false
   return parseFloat(String(s.pstn ?? s.pst ?? '0').replace(',', '.')) >= 100
 }
 
-function Avatar({ src, name }) {
+function Avatar({ src, name }: { src: string; name: string }): React.JSX.Element {
   const [err, setErr] = useState(false)
   const initials = (name || '?')
     .split(' ')
@@ -57,24 +65,24 @@ function Avatar({ src, name }) {
   return <img className="avatar" src={src} alt={name} loading="lazy" onError={() => setErr(true)} />
 }
 
-function shareFromSnap(snap, numero) {
+function shareFromSnap(snap: Snapshot | null | undefined, numero: string): number | null {
   if (!snap) return null
-  if (snap.share && snap.share[numero] != null) return snap.share[numero]
+  if (snap.share && snap.share[numero] != null) return snap.share[numero] as number
   const v = snap.votes?.[numero]
   if (v == null) return null
   const denom = snap.validos || snap.total
   if (denom) return (v / denom) * 100
-  if (snap.pct && snap.pct[numero] != null) return snap.pct[numero]
+  if (snap.pct && snap.pct[numero] != null) return snap.pct[numero] as number
   return null
 }
 
-function RaceChart({ visible, history, metric }) {
+function RaceChart({ visible, history, metric }: { visible: Candidate[]; history: Snapshot[]; metric: Metric }): React.JSX.Element {
   const pts = history || []
   const labels = pts.map((s) => s.label)
-  const datasets = visible.map((c, i) => ({
+  const datasets: ChartDataset<'line'>[] = visible.map((c, i) => ({
     label: `${c.numero} ${c.nomeUrna}`,
     data: pts.map((s) =>
-      metric === 'pct' ? shareFromSnap(s, c.numero) : (s.votes?.[c.numero] ?? null)
+      metric === 'pct' ? shareFromSnap(s, c.numero) : (s.votes?.[c.numero] ?? null),
     ),
     borderColor: colorFor(c.numero, i),
     backgroundColor: colorFor(c.numero, i),
@@ -83,14 +91,14 @@ function RaceChart({ visible, history, metric }) {
     borderWidth: 1.5,
     spanGaps: true,
   }))
-  const options = {
+  const options: ChartOptions<'line'> = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
       legend: { position: 'bottom', labels: { boxWidth: 8, font: { size: 9 }, color: '#fafafa' } },
       tooltip: {
         callbacks: {
-          label: (ctx) =>
+          label: (ctx: TooltipItem<'line'>) =>
             metric === 'pct'
               ? ` ${ctx.dataset.label}: ${fmtPct(ctx.parsed.y)}`
               : ` ${ctx.dataset.label}: ${fmtInt(ctx.parsed.y)} votos`,
@@ -104,7 +112,7 @@ function RaceChart({ visible, history, metric }) {
           font: { size: 8 },
           maxTicksLimit: 5,
           color: AXIS,
-          callback: (v) => (metric === 'pct' ? `${Number(v).toFixed(1)}%` : fmtInt(v)),
+          callback: (v: string | number) => (metric === 'pct' ? `${Number(v).toFixed(1)}%` : fmtInt(v)),
         },
         grid: { color: GRID },
       },
@@ -114,14 +122,14 @@ function RaceChart({ visible, history, metric }) {
   return <Line data={{ labels, datasets }} options={options} />
 }
 
-function Summary({ meta }) {
+function Summary({ meta }: { meta: ParsedMeta | null | undefined }): React.JSX.Element {
   const s = meta?.s || {}
   const txt = `${s.pst || '-'}% urnas · ${fmtInt(meta?.validos)} válidos · ${fmtInt(meta?.v?.tv)} votos`
-  const full = `Seções ${fmtInt(s.st)}/${fmtInt(s.ts)} · Eleitorado ${fmtInt(meta?.e?.te)} · Comparec. ${fmtInt(meta?.e?.c)} · Brancos ${fmtInt(meta?.v?.vb)} · Nulos ${fmtInt(meta?.v?.vn ?? meta?.v?.tvn)}`
+  const full = `Seções ${fmtInt(s.st)}/${fmtInt(s.ts)} · Eleitorado ${fmtInt(meta?.e?.te)} · Comparec. ${fmtInt(meta?.e?.c)} · Brancos ${fmtInt(meta?.v?.vb)} · Nulos ${fmtInt((meta?.v?.vn ?? (meta?.v as Record<string, unknown>)?.['tvn']) as string | number | null | undefined)}`
   return <div className="summary" title={full}>{txt}</div>
 }
 
-function QuocienteLine({ parsed }) {
+function QuocienteLine({ parsed }: { parsed: ParsedRace }): React.JSX.Element {
   const parties = [...new Set((parsed.candidatos || []).map((c) => c.partidoNum))]
   return (
     <>
@@ -129,7 +137,7 @@ function QuocienteLine({ parsed }) {
         const q = calcQuociente(parsed.meta, parsed.partidos, pn)
         const full = `Partido ${fmtInt(q.partyVotes)} (legenda ${fmtInt(q.legenda)}) · QE ${fmtInt(q.qe)} · QP floor(${fmtInt(q.partyVotes)}/${fmtInt(q.qe)})=${q.qp} · Vagas ${q.vagas}`
         return (
-          <div key={pn} className={`summary ${q.atingiu ? 'ok' : 'bad'}`} title={full}>
+          <div key={pn} className={q.atingiu ? 'summary-ok' : 'summary-bad'} title={full}>
             {q.sigla || pn}: {q.atingiu ? `${q.qp} cadeira(s)` : `0 · faltam ${fmtInt(q.faltam)} (${fmtPct(q.pctQE)} QE)`}
           </div>
         )
@@ -138,11 +146,21 @@ function QuocienteLine({ parsed }) {
   )
 }
 
-function CandCard({ c, i, validos, total, pos, onClick, selected, onPin, isPinned }) {
+function CandCard({ c, i, validos, total, pos, onClick, selected, onPin, isPinned }: {
+  c: Candidate;
+  i: number;
+  validos?: number | null;
+  total?: number | null;
+  pos?: number | null;
+  onClick?: () => void;
+  selected?: boolean;
+  onPin?: () => void;
+  isPinned?: boolean;
+}): React.JSX.Element {
   const pctCalc = sharePct(c.vap, validos || total)
   return (
     <div
-      className={`cand${onClick ? ' clickable' : ''}${selected ? ' selected' : ''}`}
+      className={`${onClick ? 'cand-clickable' : 'cand'}${selected ? ' cand-selected' : ''}`}
       title={`${c.nomeFull} · TSE ${c.pvap}%${onClick ? ' · clique p/ ver cadeiras do partido' : ''}`}
       onClick={onClick}
     >
@@ -160,7 +178,7 @@ function CandCard({ c, i, validos, total, pos, onClick, selected, onPin, isPinne
       </div>
       {onPin && (
         <button
-          className={`pin-btn${isPinned ? ' on' : ''}`}
+          className={isPinned ? 'pin-btn-on' : 'pin-btn'}
           title={isPinned ? 'Desafixar (sai do gráfico e do header)' : 'Fixar no header e no gráfico'}
           onClick={(e) => { e.stopPropagation(); onPin() }}
         >
@@ -171,7 +189,7 @@ function CandCard({ c, i, validos, total, pos, onClick, selected, onPin, isPinne
   )
 }
 
-function CeDetail({ parsed, cand }) {
+function CeDetail({ parsed, cand }: { parsed: ParsedRace; cand: Candidate }): React.JSX.Element {
   const q = calcQuociente(parsed.meta, parsed.partidos, cand.partidoNum)
   const min = Math.ceil(q.qe * 0.1)
   const okMin = q.qe > 0 && cand.vap >= min
@@ -186,13 +204,13 @@ function CeDetail({ parsed, cand }) {
   )
 }
 
-function PartyCard({ p }) {
+function PartyCard({ p }: { p: AggParty }): React.JSX.Element {
   const seats = (p.fed?.qp || 0) + (p.est?.qp || 0) + (p.sen?.seats || 0)
-  const topName = (t) => (t ? `${t.nome} ${fmtInt(t.vap)} (${t.numero})` : '—')
+  const topName = (t: { nome: string; numero: string; vap: number } | null | undefined): string => (t ? `${t.nome} ${fmtInt(t.vap)} (${t.numero})` : '—')
   const fedTxt = p.fed ? `${p.fed.qp} cad · top ${topName(p.fed.top)}` : null
   const estTxt = p.est ? `${p.est.qp} cad · top ${topName(p.est.top)}` : null
   const senTxt = p.sen ? `${p.sen.seats}/${p.sen.vagas} · top ${topName(p.sen.top)}` : null
-  const row = (label, txt) => (
+  const row = (label: string, txt: string | null): React.JSX.Element => (
     <div className="party-row">
       {label} · {txt == null ? <span className="party-top">s/dados</span> : <b>{txt}</b>}
     </div>
@@ -210,17 +228,18 @@ function PartyCard({ p }) {
   )
 }
 
-function UFColumn({ uf, name, data, at }) {
+function UFColumn({ uf: _uf, name, data, at }: { uf: string; name: string; data: UFData | null | undefined; at?: string | null }): React.JSX.Element {
+  void _uf
   const parties = useMemo(() => {
-    if (!data) return []
-    let agg = []
+    if (!data) return [] as AggParty[]
+    let agg: AggParty[] = []
     try {
       agg = aggregateParties(data)
     } catch {
-      return []
+      return [] as AggParty[]
     }
-    const seatsOf = (p) => (p.fed?.qp || 0) + (p.est?.qp || 0) + (p.sen?.seats || 0)
-    const votesOf = (p) => (p.fed?.votes || 0) + (p.est?.votes || 0)
+    const seatsOf = (p: AggParty): number => (p.fed?.qp || 0) + (p.est?.qp || 0) + (p.sen?.seats || 0)
+    const votesOf = (p: AggParty): number => (p.fed?.votes || 0) + (p.est?.votes || 0)
     return agg.sort((a, b) => seatsOf(b) - seatsOf(a) || votesOf(b) - votesOf(a))
   }, [data])
   const totalSeats = parties.reduce((a, p) => a + (p.fed?.qp || 0) + (p.est?.qp || 0) + (p.sen?.seats || 0), 0)
@@ -230,7 +249,7 @@ function UFColumn({ uf, name, data, at }) {
       <div className="summary" title="Cadeiras pelo QP (fed/est) + top vagas (sen) — parcial">
         {data ? <><b>{totalSeats} cad.</b> · {parties.length} partidos · {at || ''}</> : 'carregando…'}
       </div>
-      <div className="cards scroll" style={{ flex: 1, minHeight: 60 }}>
+      <div className="cards-scroll" style={{ flex: 1, minHeight: 60 }}>
         {parties.map((p) => (
           <PartyCard key={p.pn} p={p} />
         ))}
@@ -239,16 +258,25 @@ function UFColumn({ uf, name, data, at }) {
   )
 }
 
+interface ColGuardProps {
+  title: string;
+  children?: React.ReactNode;
+}
+
+interface ColGuardState {
+  err: string | null;
+}
+
 // Uma coluna com erro nunca mais apaga o painel inteiro
-class ColGuard extends React.Component {
-  constructor(p) {
+class ColGuard extends React.Component<ColGuardProps, ColGuardState> {
+  constructor(p: ColGuardProps) {
     super(p)
     this.state = { err: null }
   }
-  static getDerivedStateFromError(err) {
-    return { err: String(err?.message || err) }
+  static getDerivedStateFromError(err: unknown): ColGuardState {
+    return { err: String((err as Error)?.message || err) }
   }
-  render() {
+  render(): React.ReactNode {
     if (this.state.err) {
       return (
         <section className="column">
@@ -261,13 +289,29 @@ class ColGuard extends React.Component {
   }
 }
 
-function BrazilColumn({ ufs, meta }) {
+interface BrazilRow {
+  pn: string;
+  sg: string;
+  fed: number;
+  est: number;
+  sen: number;
+  votes: number;
+}
+
+interface BrazilMeta {
+  loading: boolean;
+  done: number;
+  total: number;
+  at: string | null;
+}
+
+function BrazilColumn({ ufs, meta }: { ufs: Record<string, UFData>; meta: BrazilMeta }): React.JSX.Element {
   const rows = useMemo(() => {
-    const map = {}
+    const map: Record<string, BrazilRow> = {}
     for (const [uf] of UFS) {
       const d = ufs[uf]
       if (!d) continue
-      let agg = []
+      let agg: AggParty[] = []
       try {
         agg = aggregateParties(d)
       } catch {
@@ -282,40 +326,44 @@ function BrazilColumn({ ufs, meta }) {
       }
     }
     const arr = Object.values(map)
-    const tot = (r) => r.fed + r.est + r.sen
+    const tot = (r: BrazilRow): number => r.fed + r.est + r.sen
     return arr.sort((a, b) => tot(b) - tot(a) || b.votes - a.votes)
   }, [ufs])
   const totalSeats = rows.reduce((a, r) => a + r.fed + r.est + r.sen, 0)
-  const pieFor = (get) => {
+  const pieFor = (get: (r: BrazilRow) => number): ChartData<'pie'> => {
     const items = rows.filter((r) => get(r) > 0).sort((a, b) => get(b) - get(a))
-    const top = items.slice(0, 5)
+    const top: Array<BrazilRow & { __seats?: number }> = items.slice(0, 5)
     const rest = items.slice(5)
     if (rest.length) {
       top.push({
         pn: 'outros',
         sg: 'Outros',
+        fed: 0,
+        est: 0,
+        sen: 0,
+        votes: 0,
         __seats: rest.reduce((a, r) => a + get(r), 0),
       })
     }
     return {
       labels: top.map((r) => r.sg),
       datasets: [{
-        data: top.map((r) => (r.pn === 'outros' ? r.__seats : get(r))),
+        data: top.map((r) => (r.pn === 'outros' ? (r.__seats ?? 0) : get(r))),
         backgroundColor: top.map((r, i) => (r.pn === 'outros' ? '#52525b' : partyColor(r.pn, i))),
         borderColor: '#000',
         borderWidth: 1,
       }],
     }
   }
-  const pieOpts = {
+  const pieOpts: ChartOptions<'pie'> = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
       legend: { display: true, position: 'right', labels: { boxWidth: 8, font: { size: 9 }, color: '#fafafa' } },
-      tooltip: { callbacks: { label: (ctx) => ` ${ctx.label}: ${ctx.parsed} cad.` } },
+      tooltip: { callbacks: { label: (ctx: TooltipItem<'pie'>) => ` ${ctx.label}: ${ctx.parsed} cad.` } },
     },
   }
-  const pies = [
+  const pies: Array<[string, ChartData<'pie'>]> = [
     ['FED · cadeiras por partido', pieFor((r) => r.fed)],
     ['EST · cadeiras por partido', pieFor((r) => r.est)],
     ['SEN · cadeiras por partido', pieFor((r) => r.sen)],
@@ -331,12 +379,12 @@ function BrazilColumn({ ufs, meta }) {
           <div key={label}>
             <div className="chart-title" style={{ marginTop: 0 }}>{label}</div>
             <div style={{ height: 170, position: 'relative' }}>
-              {data.labels.length ? <Pie data={data} options={pieOpts} /> : <div className="hint" style={{ textAlign: 'center' }}>—</div>}
+              {data.labels?.length ? <Pie data={data} options={pieOpts} /> : <div className="hint" style={{ textAlign: 'center' }}>—</div>}
             </div>
           </div>
         ))}
       </div>
-      <div className="cards scroll" style={{ flex: 1, minHeight: 60 }}>
+      <div className="cards-scroll" style={{ flex: 1, minHeight: 60 }}>
         {rows.map((r) => (
           <div
             key={r.pn}
@@ -354,55 +402,55 @@ function BrazilColumn({ ufs, meta }) {
   )
 }
 
-export default function App() {
-  const [data, setData] = useState({})
-  const [errors, setErrors] = useState({})
-  const [history, setHistory] = useState({})
-  const [loading, setLoading] = useState(true)
-  const [auto, setAuto] = useState(true)
-  const [metric, setMetric] = useState('pct')
-  const [countdown, setCountdown] = useState(REFRESH_MS / 1000)
-  const [refreshMs, setRefreshMs] = useState(REFRESH_MS)
-  const [finished, setFinished] = useState(false) // apuração 100% → para de bater na API
-  const [open, setOpen] = useState({}) // { [candKey]: true } — vários QE abertos
-  const toggleOpen = useCallback((key) => setOpen((p) => ({ ...p, [key]: !p[key] })), [])
-  const [search, setSearch] = useState({}) // { [raceId]: query } — busca por nome na coluna
-  const [ufs, setUfs] = useState({}) // { [uf]: {fed, est, sen} } — 1 coluna por estado
-  const [ufsMeta, setUfsMeta] = useState({ loading: true, done: 0, total: UFS.length, at: null })
-  const [pinned, setPinned] = useState(() => {
+export default function App(): React.JSX.Element {
+  const [data, setData] = useState<Record<string, ParsedRace>>({})
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [history, setHistory] = useState<HistoryMap>({})
+  const [loading, setLoading] = useState<boolean>(true)
+  const [auto, setAuto] = useState<boolean>(true)
+  const [metric, setMetric] = useState<Metric>('pct')
+  const [countdown, setCountdown] = useState<number>(REFRESH_MS / 1000)
+  const [refreshMs, setRefreshMs] = useState<number>(REFRESH_MS)
+  const [finished, setFinished] = useState<boolean>(false) // apuração 100% → para de bater na API
+  const [open, setOpen] = useState<Record<string, boolean>>({}) // { [candKey]: true } — vários QE abertos
+  const toggleOpen = useCallback((key: string) => setOpen((p) => ({ ...p, [key]: !p[key] })), [])
+  const [search, setSearch] = useState<Record<string, string>>({}) // { [raceId]: query } — busca por nome na coluna
+  const [ufs, setUfs] = useState<Record<string, UFData>>({}) // { [uf]: {fed, est, sen} } — 1 coluna por estado
+  const [ufsMeta, setUfsMeta] = useState<BrazilMeta>({ loading: true, done: 0, total: UFS.length, at: null })
+  const [pinned, setPinned] = useState<Record<string, string[]>>(() => {
     try {
-      return JSON.parse(localStorage.getItem('tse-pinned-v1') || '{}')
+      return JSON.parse(localStorage.getItem('tse-pinned-v1') || '{}') as Record<string, string[]>
     } catch {
-      return {}
+      return {} as Record<string, string[]>
     }
   }) // { [raceId]: [candKey] } — só fixados vão ao gráfico + header
-  const pinnedRef = useRef({})
+  const pinnedRef = useRef<Record<string, string[]>>({})
   useEffect(() => {
     pinnedRef.current = pinned
     try {
       localStorage.setItem('tse-pinned-v1', JSON.stringify(pinned))
     } catch { /* sem persistência */ }
   }, [pinned])
-  const togglePin = useCallback((raceId, key) => {
+  const togglePin = useCallback((raceId: string, key: string) => {
     setPinned((p) => {
       const arr = (p[raceId] || []).filter((k) => k !== key)
       if (!(p[raceId] || []).includes(key)) arr.push(key)
       return { ...p, [raceId]: arr }
     })
   }, [])
-  const fetchingRef = useRef(false)
-  const raceById = useMemo(() => Object.fromEntries(RACES.map((r) => [r.id, r])), [])
+  const fetchingRef = useRef<boolean>(false)
+  const raceById = useMemo<Record<string, Race>>(() => Object.fromEntries(RACES.map((r) => [r.id, r])), [])
 
   useEffect(() => {
     loadHistory().then((h) => setHistory(h || {}))
   }, [])
 
-  const fetchAll = useCallback(async () => {
+  const fetchAll = useCallback(async (): Promise<void> => {
     if (fetchingRef.current) return
     fetchingRef.current = true
     setLoading(true)
-    const nextData = {}
-    const nextErr = {}
+    const nextData: Record<string, ParsedRace> = {}
+    const nextErr: Record<string, string> = {}
     for (const race of RACES) {
       try {
         const raw = await fetchRaceJson(race.url)
@@ -410,18 +458,18 @@ export default function App() {
         nextData[race.id] = parsed
         // geral: histórico do top 15 + fixados (gráfico: fixados ou top 10)
         if (race.tipo !== 'senado') {
-          const byKey = new Map(parsed.candidatos.map((c) => [c.key, c]))
-          const wanted = new Map()
+          const byKey = new Map<string, Candidate>(parsed.candidatos.map((c) => [c.key, c]))
+          const wanted = new Map<string, Candidate>()
           for (const c of parsed.candidatos.slice(0, 15)) wanted.set(c.key, c)
           for (const k of pinnedRef.current[race.id] || []) {
             const c = byKey.get(k)
             if (c) wanted.set(k, c)
           }
           const snapCands = [...wanted.values()]
-          const votes = {}
-          const pctTse = {}
-          const share = {}
-          const names = {}
+          const votes: Record<string, number> = {}
+          const pctTse: Record<string, number> = {}
+          const share: Record<string, number> = {}
+          const names: Record<string, string> = {}
           for (const c of snapCands) {
             votes[c.numero] = c.vap
             pctTse[c.numero] = c.pvapNum
@@ -429,7 +477,7 @@ export default function App() {
             names[c.numero] = c.nomeUrna
           }
           const label = `${parsed.meta.ht || parsed.meta.hg || new Date().toLocaleTimeString('pt-BR')}`
-          const snap = {
+          const snap: Snapshot = {
             t: Date.now(),
             label,
             hg: parsed.meta.hg,
@@ -447,7 +495,7 @@ export default function App() {
           if (updated) setHistory(updated)
         }
       } catch (err) {
-        nextErr[race.id] = String(err?.message || err)
+        nextErr[race.id] = String((err as Error)?.message || err)
       }
     }
     setData((prev) => ({ ...prev, ...nextData }))
@@ -483,11 +531,11 @@ export default function App() {
   }, [auto, refreshMs, fetchAll])
 
   // 27 estados × 3 cargos (81 arquivos) — ciclo lento separado, 180s, lotes de 5
-  const fetchUFs = useCallback(async () => {
-    const out = {}
+  const fetchUFs = useCallback(async (): Promise<void> => {
+    const out: Record<string, UFData> = {}
     for (let i = 0; i < UFS.length; i += 5) {
       const batch = UFS.slice(i, i + 5)
-      const res = await Promise.all(batch.map(async ([uf]) => [uf, await fetchUFCargos(uf)]))
+      const res: Array<[string, UFData]> = await Promise.all(batch.map(async ([uf]): Promise<[string, UFData]> => [uf, await fetchUFCargos(uf)]))
       for (const [uf, r] of res) out[uf] = { ...r, at: new Date().toLocaleTimeString('pt-BR') }
       setUfs((prev) => ({ ...prev, ...out }))
       setUfsMeta({ loading: true, done: Math.min(i + 5, UFS.length), total: UFS.length, at: null })
@@ -510,7 +558,7 @@ export default function App() {
     [history]
   )
 
-  function effHistFor(raceId) {
+  function effHistFor(raceId: string): Snapshot[] {
     const parsed = data[raceId]
     const cands = parsed?.candidatos || []
     const hist = history[raceId] || []
@@ -534,6 +582,7 @@ export default function App() {
         <h1>Apuração 2026 — Tempo real</h1>
         <div className="sub">panorama geral · fixe ☆ p/ ver o gráfico · {refreshMs / 1000}s</div>
         <div className="spacer" />
+        <Link className="btn-ghost-sm" to="/2-turno" style={{ textDecoration: 'none' }}>2º turno</Link>
         <span className="badge">{finished ? 'finalizada ✓' : auto ? `${countdown}s` : 'pausado'}</span>
         <span className="badge">{totalHistoryPoints} pts</span>
         <select
@@ -551,13 +600,13 @@ export default function App() {
           <option value={5000}>5s</option>
           <option value={10000}>10s</option>
         </select>
-        <button className="btn ghost small" onClick={() => setMetric(metric === 'votos' ? 'pct' : 'votos')}>
+        <button className="btn-ghost-sm" onClick={() => setMetric(metric === 'votos' ? 'pct' : 'votos')}>
           {metric === 'votos' ? 'votos' : '%'}
         </button>
-        <button className="btn ghost small" onClick={() => { setAuto(!auto); if (!auto) setFinished(false) }}>{auto ? 'Pausar' : 'Retomar'}</button>
-        <button className="btn small" onClick={fetchAll} disabled={loading}>{loading ? '...' : 'Atualizar'}</button>
+        <button className="btn-ghost-sm" onClick={() => { setAuto(!auto); if (!auto) setFinished(false) }}>{auto ? 'Pausar' : 'Retomar'}</button>
+        <button className="btn-sm" onClick={fetchAll} disabled={loading}>{loading ? '...' : 'Atualizar'}</button>
         <button
-          className="btn ghost small"
+          className="btn-ghost-sm"
           onClick={async () => {
             if (confirm('Limpar histórico do IndexedDB?')) setHistory(await clearHistory())
           }}
@@ -577,10 +626,10 @@ export default function App() {
                 const list = parsed?.ranking || parsed?.candidatos || []
                 const isProp = race.tipo === 'proporcional'
                 const effHist = col.rankingOnly ? [] : effHistFor(raceId)
-                const byKey = new Map(list.map((c) => [c.key, c]))
+                const byKey = new Map<string, Candidate>(list.map((c) => [c.key, c]))
                 const pinKeys = pinned[raceId] || []
-                const pinnedCands = pinKeys.map((k) => byKey.get(k)).filter(Boolean)
-                const rankPos = new Map(list.map((c, idx) => [c.key, idx + 1]))
+                const pinnedCands = pinKeys.map((k) => byKey.get(k)).filter((c): c is Candidate => Boolean(c))
+                const rankPos = new Map<string, number>(list.map((c, idx) => [c.key, idx + 1]))
                 const query = search[raceId] || ''
                 const filtered = fuzzyFilter(list, query, ['nomeUrna', 'nomeFull', 'numero', 'partido'])
                 const top10 = list.slice(0, 10)
@@ -630,7 +679,7 @@ export default function App() {
                       <div className="chart-title">Ranking geral · {list.length}</div>
                     )}
                     <div style={{ flex: 1, minHeight: 60 }}>
-                      <Virtuoso
+                      <Virtuoso<Candidate>
                         style={{ height: '100%' }}
                         data={filtered}
                         computeItemKey={(_idx, c) => c.key}

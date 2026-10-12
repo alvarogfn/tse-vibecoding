@@ -1,6 +1,6 @@
 import { MicroPath } from './MicroPath';
 import { MunPath } from './MunPath';
-import { fmtPct } from '../../../lib/second-turn.js';
+import { fmtPct } from '../../../helpers/election.js';
 import type { Candidate } from '../../../lib/tse.js';
 import type { SvgPath } from '../../../lib/second-turn.js';
 

@@ -4,7 +4,7 @@ import { RACES, fetchRaceJson, parseRace, sharePct } from '../../../lib/tse.js'
 import type { Candidate, ParsedRace } from '../../../lib/tse.js'
 import { loadHistory, appendSnapshot, clearHistory, hashVotes } from '../../../lib/history.js'
 import type { Snapshot, HistoryMap } from '../../../lib/history.js'
-import { isComplete } from '../components/utils.js'
+import { buildEffectiveHistory, isComplete } from '../../../helpers/election.js'
 
 const REFRESH_MS = 5000
 
@@ -139,23 +139,7 @@ export function useRacesPolling(pinned: Record<string, string[]>): RacesPollingR
     [history]
   )
 
-  const effHistFor = useCallback((raceId: string): Snapshot[] => {
-    const parsed = data[raceId]
-    const cands = parsed?.candidatos || []
-    const hist = history[raceId] || []
-    if (hist.length > 0) return hist
-    if (!cands.length) return []
-    return [
-      {
-        label: parsed?.meta?.ht || parsed?.meta?.hg || 'agora',
-        votes: Object.fromEntries(cands.map((c) => [c.numero, c.vap])),
-        share: Object.fromEntries(cands.map((c) => [c.numero, sharePct(c.vap, parsed.meta.validos)])),
-        pct: Object.fromEntries(cands.map((c) => [c.numero, c.pvapNum])),
-        validos: parsed.meta.validos,
-        total: parsed.meta.totalVotos,
-      },
-    ]
-  }, [data, history])
+  const effHistFor = useCallback((raceId: string): Snapshot[] => buildEffectiveHistory(data, history, raceId), [data, history])
 
   const clearHistoryData = useCallback(async (): Promise<void> => {
     setHistory(await clearHistory())

@@ -283,27 +283,17 @@ export const COLUMNS: RaceColumn[] = [
   { key: 'sen', titulo: 'Senado MG · ranking', races: ['sen-mg'], rankingOnly: true },
 ]
 
+import { HttpError } from '../helpers/http-error.js';
+import { decodeJwsPayload } from '../helpers/jws.js';
+
 export function fotoUrl(race: RaceInput, sqcand: string | number): string {
   return `https://resultados.tse.jus.br/oficial/${race.ciclo}/${race.ele}/fotos/${race.ufFoto}/${sqcand}.jpeg`
 }
 
-function b64UrlDecodeToJson(b64: string): TseRawPayload {
-  const norm = b64.replace(/-/g, '+').replace(/_/g, '/')
-  const pad = norm + '='.repeat((4 - (norm.length % 4)) % 4)
-  const bin = atob(pad)
-  const bytes = new Uint8Array(bin.length)
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-  const text = new TextDecoder('utf-8').decode(bytes)
-  return JSON.parse(text) as TseRawPayload
-}
-
 export async function fetchRaceJson(url: string): Promise<TseRawPayload> {
   const res = await fetch(url + `?t=${Date.now()}`, { cache: 'no-store' })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  const text = (await res.text()).trim()
-  const parts = text.split('.')
-  if (parts.length < 2) throw new Error('JWS inválido')
-  return b64UrlDecodeToJson(parts[1])
+  if (!res.ok) throw new HttpError(`HTTP ${res.status}`, res.status)
+  return decodeJwsPayload(await res.text())
 }
 
 // Achata carg/agr/par/cand -> lista de candidatos (+ partidos, vagas, QE)

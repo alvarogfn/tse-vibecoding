@@ -1,6 +1,6 @@
 import { calcQuociente, fmtInt } from '../../../lib/tse.js'
 import type { ParsedRace } from '../../../lib/tse.js'
-import { fmtPct } from './utils.js'
+import { fmtPct } from '../../../helpers/election.js'
 
 export interface QuocienteLineProps {
   parsed: ParsedRace;

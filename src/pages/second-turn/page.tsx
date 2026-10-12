@@ -7,14 +7,13 @@ import {
   MICRO_GRAY,
   ROUND2_LIVE,
   USE_ROUND2_GEO,
-  finalistColor,
-  fmtPct,
 } from '../../lib/second-turn.js';
-import { useSvgMap } from '../../hooks/useSvgMap';
-import { usePolling } from '../../hooks/usePolling';
-import { useSecondTurnTop } from './hooks/useSecondTurnTop';
-import { useUfWinners } from './hooks/useUfWinners';
-import { useMgGeo } from './hooks/useMgGeo';
+import { finalistColor, fmtPct } from '../../helpers/election.js';
+import { useSvgMap } from '../../hooks/use-svg-map';
+import { usePolling } from '../../hooks/use-polling';
+import { useSecondTurnTop } from './hooks/use-second-turn-top';
+import { useUfRacesFindAll } from './hooks/use-uf-races-find-all';
+import { useMgGeo } from './hooks/use-mg-geo';
 import { CandLegend } from './components/CandLegend';
 import { BrazilMap } from './components/BrazilMap';
 import { MinasMap } from './components/MinasMap';
@@ -23,7 +22,7 @@ import { MapCard } from './components/MapCard';
 export default function SegundoTurno(): React.JSX.Element {
   const { pres, presMG, presErr, presMGErr, loading, refetch: fetchTop } = useSecondTurnTop();
   const presTop2ForUf = useMemo(() => (pres?.candidatos || []).slice(0, 2).map((c) => String(c.numero)), [pres]);
-  const { ufWinners, ufMeta } = useUfWinners(presTop2ForUf, ROUND2_LIVE && !!pres);
+  const { ufWinners, ufMeta } = useUfRacesFindAll(presTop2ForUf, ROUND2_LIVE && !!pres);
   // { microId (ex. micro_310519): numero do vencedor na microrregião } — vazio até o TSE publicar o 2º turno
   const [winnersByMicro, setWinnersByMicro] = useState<Record<string, string>>({});
   const [auto, setAuto] = useState<boolean>(true);

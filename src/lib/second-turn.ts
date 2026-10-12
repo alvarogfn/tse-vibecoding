@@ -1,5 +1,4 @@
-import { partyColor } from './tse.js';
-import type { Candidate, Race } from './tse.js';
+import type { Race } from './tse.js';
 
 export const BASE: string = import.meta.env.BASE_URL || '/';
 export const BRAZIL_SVG_URL = `${BASE}maps/brazil.svg`;
@@ -42,26 +41,10 @@ export const LULA_RED = '#dc2626';
 // Sem endpoints do 2º turno por microrregião: tudo em cinza claro
 export const MICRO_GRAY = '#d4d4d8';
 
-export function finalistColor(c: Candidate, i: number): string {
-  const name = `${c.nomeUrna || ''} ${c.nomeFull || ''}`.toUpperCase();
-  if (name.includes('LULA')) return LULA_RED;
-  if (name.includes('JAIR') || name.includes('BOLSONARO')) return JAIR_BLUE;
-  return partyColor(c.partidoNum, i);
-}
-
-export function fmtPct(n: number | null | undefined): string {
-  return Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
-}
-
 export interface SvgPath {
   id: string;
   d: string;
   title: string;
-}
-
-// Converte id de microrregião do IBGE (ex. 31019 + meso 3105) p/ id no SVG (ex. micro_310519)
-export function svgMicroId(microId: number, mesoId: number): string {
-  return `micro_31${String(mesoId % 100).padStart(2, '0')}${String(microId % 100).padStart(2, '0')}`;
 }
 
 export interface IbgeMicroRaw {

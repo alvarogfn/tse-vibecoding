@@ -1,4 +1,5 @@
-import { fmtPct, USE_ROUND2_GEO } from '../../../lib/second-turn.js';
+import { USE_ROUND2_GEO } from '../../../lib/second-turn.js';
+import { fmtPct } from '../../../helpers/election.js';
 import type { SvgPath, UFWinner } from '../../../lib/second-turn.js';
 
 interface BrazilMapProps {

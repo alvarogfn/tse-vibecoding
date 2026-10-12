@@ -1,7 +1,7 @@
 import { colorFor, sharePct, fmtInt } from '../../../lib/tse.js'
 import type { Candidate } from '../../../lib/tse.js'
 import { Avatar } from '../../../components/Avatar.js'
-import { fmtPct } from './utils.js'
+import { fmtPct } from '../../../helpers/election.js'
 
 export interface CandCardProps {
   c: Candidate;

@@ -3,13 +3,16 @@ import { UFS, fetchRaceJson, parseRace } from '../../../lib/tse.js';
 import type { Candidate } from '../../../lib/tse.js';
 import { RACE_PRES } from '../../../lib/second-turn.js';
 import type { UFWinner, UFMeta } from '../../../lib/second-turn.js';
+import { mountURL } from '../../../helpers/mount-url.js';
+import { PATH_RACE_FIND_BY_ID, buildRaceFile } from '../../../api/race.js';
 
 // Fail-Safe contract: per-UF failures stay neutral (UF sem dado — mantém neutra),
 // sweep-level failures resolve to error state — never throws.
-// Cannot use useFetch because this is a 27-file batched sweep (lots of 4, progress
-// meta) where each file is a TSE JWS payload (text + base64 decode), aggregated
-// into a winners map — not a single response.json().
-export const useUfWinners = (topNumeros: string[], enabled: boolean) => {
+// Find-all das 27 UFs: mesma shape { data, error, loading, refetch }. Não cabe num
+// useFetch único porque é uma varredura em lotes de 4 com meta de progresso, onde
+// cada arquivo é um payload TSE JWS (texto + decode) agregado num mapa de vencedores.
+// As URLs saem do catálogo /api via mountURL (pathParams por UF).
+export const useUfRacesFindAll = (topNumeros: string[], enabled: boolean) => {
   const [ufWinners, setUfWinners] = useState<Record<string, UFWinner>>({});
   const [ufMeta, setUfMeta] = useState<UFMeta>({ done: 0, total: UFS.length, at: null });
   const [loading, setLoading] = useState<boolean>(false);
@@ -23,7 +26,9 @@ export const useUfWinners = (topNumeros: string[], enabled: boolean) => {
         const batch = UFS.slice(i, i + 4);
         await Promise.all(
           batch.map(async ([uf]): Promise<void> => {
-            const url = `https://resultados.tse.jus.br/oficial/ele2026/6257/dados/${uf}/${uf}-c0001-e006257-u.jws`;
+            const url = mountURL(PATH_RACE_FIND_BY_ID, {
+              pathParams: { ciclo: RACE_PRES.ciclo, ele: RACE_PRES.ele, scope: uf, file: buildRaceFile(uf, '0001', RACE_PRES.ele) },
+            });
             try {
               const raw = await fetchRaceJson(url);
               const parsed = parseRace({ ...RACE_PRES, ufFoto: uf }, raw);

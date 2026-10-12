@@ -3,8 +3,11 @@ import { Line } from 'react-chartjs-2'
 import { colorFor, fmtInt } from '../../../lib/tse.js'
 import type { Candidate } from '../../../lib/tse.js'
 import type { Snapshot } from '../../../lib/history.js'
-import { AXIS, GRID, fmtPct, shareFromSnap } from './utils.js'
-import type { Metric } from './utils.js'
+import { fmtPct, shareFromSnap } from '../../../helpers/election.js'
+import type { Metric } from '../../../helpers/election.js'
+
+export const AXIS = '#a1a1aa'
+export const GRID = '#27272a'
 
 export interface RaceChartProps {
   visible: Candidate[];

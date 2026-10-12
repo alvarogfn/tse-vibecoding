@@ -2,8 +2,8 @@ import 'virtual:uno.css'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router'
-import App from './App.tsx'
-import SegundoTurno from './pages/SegundoTurno.tsx'
+import SecondTurn from './pages/second-turn/page'
+import FirstTurn from './pages/first-turn/page'
 import './index.css'
 
 // Modo declarativo do React Router (<BrowserRouter> + <Routes>/<Route>).
@@ -16,8 +16,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter basename={basename}>
       <Routes>
-        <Route index element={<App />} />
-        <Route path="2-turno" element={<SegundoTurno />} />
+        <Route path="/" element={<Navigate to="/2-turno" replace />} />
+        <Route path="2-turno" element={<SecondTurn />} />
+        <Route path="1-turno" element={<FirstTurn />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

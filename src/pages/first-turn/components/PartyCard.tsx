@@ -1,5 +1,5 @@
-import { fmtInt } from '../../../lib/tse.js'
-import type { AggParty } from '../../../lib/tse.js'
+import { fmtInt } from '@/lib/tse.js'
+import type { AggParty } from '@/lib/tse.js'
 
 export interface PartyCardProps {
   p: AggParty;

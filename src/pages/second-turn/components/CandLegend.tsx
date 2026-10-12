@@ -1,7 +1,7 @@
-import { Avatar } from '../../../components/Avatar';
-import { fmtInt } from '../../../lib/tse.js';
-import type { Candidate } from '../../../lib/tse.js';
-import { fmtPct } from '../../../helpers/election.js';
+import { Avatar } from '@/components/Avatar';
+import { fmtInt } from '@/lib/tse.js';
+import type { Candidate } from '@/lib/tse.js';
+import { fmtPct } from '@/helpers/election.js';
 
 export function CandLegend({ cands, colors }: { cands: Candidate[]; colors: Record<string, string> }): React.JSX.Element {
   if (!cands?.length) return <div className="hint">Aguardando dados do 2º turno…</div>;

@@ -1,5 +1,5 @@
-import { calcQuociente, fmtInt } from '../../../lib/tse.js'
-import type { Candidate, ParsedRace } from '../../../lib/tse.js'
+import { calcQuociente, fmtInt } from '@/lib/tse.js'
+import type { Candidate, ParsedRace } from '@/lib/tse.js'
 
 export interface CeDetailProps {
   parsed: ParsedRace;

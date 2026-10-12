@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
-import { aggregateParties } from '../../../lib/tse.js'
-import type { AggParty, UFData } from '../../../lib/tse.js'
-import { PartyCard } from './PartyCard.js'
+import { aggregateParties } from '@/lib/tse.js'
+import type { AggParty, UFData } from '@/lib/tse.js'
+import { PartyCard } from '@/pages/first-turn/components/PartyCard.js'
 
 export interface UFColumnProps {
   uf: string;

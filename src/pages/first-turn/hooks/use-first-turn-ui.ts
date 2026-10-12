@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
-import type { Metric } from '../../../helpers/election.js'
+import type { Metric } from '@/helpers/election.js'
 
 export interface FirstTurnUIResult {
   open: Record<string, boolean>;

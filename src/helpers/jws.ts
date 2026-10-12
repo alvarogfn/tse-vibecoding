@@ -1,5 +1,5 @@
-import { HttpError } from './http-error.js';
-import type { TseRawPayload } from '../lib/tse.js';
+import { HttpError } from '@/helpers/http-error.js';
+import type { TseRawPayload } from '@/lib/tse.js';
 
 /** Decodifica o payload de um JWS do TSE (texto `header.payload.sig` → JSON). Puro, sem lifecycle. */
 export function decodeJwsPayload(text: string): TseRawPayload {

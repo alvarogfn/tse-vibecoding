@@ -1,2 +1,2 @@
-export * from './race.js';
-export * from './municipality.js';
+export * from '@/api/race.js';
+export * from '@/api/municipality.js';

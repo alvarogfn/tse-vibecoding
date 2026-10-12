@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import { UFS, fetchUFCargos } from '../../../lib/tse.js'
-import type { UFData } from '../../../lib/tse.js'
-import type { BrazilMeta } from '../../../helpers/election.js'
+import { UFS, fetchUFCargos } from '@/lib/tse.js'
+import type { UFData } from '@/lib/tse.js'
+import type { BrazilMeta } from '@/helpers/election.js'
 
 export interface UFsSweepResult {
   data: Record<string, UFData>;

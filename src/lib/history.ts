@@ -1,5 +1,5 @@
 import localforage from 'localforage'
-import type { Candidate } from './tse.js'
+import type { Candidate } from '@/lib/tse.js'
 
 localforage.config({
   name: 'tse-vibecoding',

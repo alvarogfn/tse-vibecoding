@@ -1,9 +1,9 @@
 import { useMemo, useCallback } from 'react';
-import { parseRace } from '../../../lib/tse.js';
-import type { ParsedRace } from '../../../lib/tse.js';
-import { RACE_PRES, RACE_PRES_MG } from '../../../lib/second-turn.js';
-import { useNationalPresidentFindById } from '../../../hooks/use-national-president-find-by-id.js';
-import { useMgPresidentFindById } from '../../../hooks/use-mg-president-find-by-id.js';
+import { parseRace } from '@/lib/tse.js';
+import type { ParsedRace } from '@/lib/tse.js';
+import { RACE_PRES, RACE_PRES_MG } from '@/lib/second-turn.js';
+import { useNationalPresidentFindById } from '@/hooks/use-national-president-find-by-id.js';
+import { useMgPresidentFindById } from '@/hooks/use-mg-president-find-by-id.js';
 
 export interface SecondTurnTopData {
   pres: ParsedRace | null;

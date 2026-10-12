@@ -1,9 +1,9 @@
 import { useMemo, useCallback } from 'react';
-import { useFetch } from '../../../hooks/use-fetch.js';
-import { useMgMunicipalitiesFindAll } from '../../../hooks/use-mg-municipalities-find-all.js';
-import { MG_MUN_URL } from '../../../lib/second-turn.js';
-import type { IbgeMunRaw, MgGeo } from '../../../lib/second-turn.js';
-import { toGeo } from '../../../helpers/mg-geo.js';
+import { useFetch } from '@/hooks/use-fetch.js';
+import { useMgMunicipalitiesFindAll } from '@/hooks/use-mg-municipalities-find-all.js';
+import { MG_MUN_URL } from '@/lib/second-turn.js';
+import type { IbgeMunRaw, MgGeo } from '@/lib/second-turn.js';
+import { toGeo } from '@/helpers/mg-geo.js';
 
 const FORCE_CACHE: RequestInit = { cache: 'force-cache' };
 

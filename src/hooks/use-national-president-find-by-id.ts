@@ -1,6 +1,6 @@
-import { RACE_PRES } from '../lib/second-turn.js';
-import { buildRaceFile } from '../api/race.js';
-import { useRaceFindById } from './use-race-find-by-id.js';
+import { RACE_PRES } from '@/lib/second-turn.js';
+import { buildRaceFile } from '@/api/race.js';
+import { useRaceFindById } from '@/hooks/use-race-find-by-id.js';
 
 /** GET fixo: apuração nacional de presidente (endpoint sem params — pathParams aplicados aqui). */
 export function useNationalPresidentFindById() {

@@ -1,5 +1,5 @@
-import { fmtInt } from '../../../lib/tse.js'
-import type { ParsedMeta } from '../../../lib/tse.js'
+import { fmtInt } from '@/lib/tse.js'
+import type { ParsedMeta } from '@/lib/tse.js'
 
 export interface SummaryProps {
   meta: ParsedMeta | null | undefined;

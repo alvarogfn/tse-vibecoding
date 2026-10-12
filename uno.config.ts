@@ -78,6 +78,7 @@ const shortcuts: Record<string, string> = {
     'st-leg-pct': 'text-accent text-xs',
     'st-map': 'flex-1 min-h-0 flex items-center justify-center overflow-hidden',
     'st-svg': 'w-full h-full max-h-[68vh] max-[900px]:max-h-[60vh]',
+    'st-full': 'flex-none w-full mt-2',
 
     // ---- variantes COMBINADAS (regra única: sem briga de ordem no cascade;
     // utilitários de override vêm DEPOIS da base expandida).

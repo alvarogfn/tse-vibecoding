@@ -1,4 +1,4 @@
-import type { IbgeMunRaw } from '../lib/second-turn.js';
+import type { IbgeMunRaw } from '@/lib/second-turn.js';
 
 /** Lista municípios de uma UF: /estados/{uf}/municipios */
 export const PATH_MUNICIPALITIES_FIND_ALL =

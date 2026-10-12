@@ -2,8 +2,8 @@ import 'virtual:uno.css'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router'
-import SecondTurn from './pages/second-turn/page'
-import FirstTurn from './pages/first-turn/page'
+import SecondTurn from '@/pages/second-turn/page'
+import FirstTurn from '@/pages/first-turn/page'
 import './index.css'
 
 // Modo declarativo do React Router (<BrowserRouter> + <Routes>/<Route>).

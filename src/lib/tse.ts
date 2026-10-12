@@ -283,15 +283,16 @@ export const COLUMNS: RaceColumn[] = [
   { key: 'sen', titulo: 'Senado MG · ranking', races: ['sen-mg'], rankingOnly: true },
 ]
 
-import { HttpError } from '../helpers/http-error.js';
-import { decodeJwsPayload } from '../helpers/jws.js';
+import { HttpError } from '@/helpers/http-error.js';
+import { decodeJwsPayload } from '@/helpers/jws.js';
 
 export function fotoUrl(race: RaceInput, sqcand: string | number): string {
   return `https://resultados.tse.jus.br/oficial/${race.ciclo}/${race.ele}/fotos/${race.ufFoto}/${sqcand}.jpeg`
 }
 
 export async function fetchRaceJson(url: string): Promise<TseRawPayload> {
-  const res = await fetch(url + `?t=${Date.now()}`, { cache: 'no-store' })
+  const sep = url.includes('?') ? '&' : '?';
+  const res = await fetch(url + `${sep}t=${Date.now()}`, { cache: 'no-store' })
   if (!res.ok) throw new HttpError(`HTTP ${res.status}`, res.status)
   return decodeJwsPayload(await res.text())
 }

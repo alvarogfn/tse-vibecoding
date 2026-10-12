@@ -1,4 +1,4 @@
-import type { IbgeMunRaw, MgGeo } from '../lib/second-turn.js';
+import type { IbgeMunRaw, MgGeo } from '@/lib/second-turn.js';
 
 /** Converte id de microrregião do IBGE (ex. 31019 + meso 3105) p/ id no SVG (ex. micro_310519). Puro. */
 export function svgMicroId(microId: number, mesoId: number): string {

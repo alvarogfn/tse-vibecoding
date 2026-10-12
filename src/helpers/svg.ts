@@ -1,4 +1,4 @@
-import type { SvgPath } from '../lib/second-turn.js';
+import type { SvgPath } from '@/lib/second-turn.js';
 
 /** Extrai paths por prefixo de id de um SVG em texto. Puro (DOMParser, sem lifecycle). */
 export function parseSvgPaths(xmlText: string, prefix: string): SvgPath[] {

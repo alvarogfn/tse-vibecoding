@@ -1,7 +1,7 @@
-import { useFetch } from './use-fetch.js';
-import { mountURL } from '../helpers/mount-url.js';
-import { PATH_MUNICIPALITY_FIND_BY_ID } from '../api/municipality.js';
-import type { MunicipalityFindByIdPathParams, MunicipalityFindByIdResponse } from '../api/municipality.js';
+import { useFetch } from '@/hooks/use-fetch.js';
+import { mountURL } from '@/helpers/mount-url.js';
+import { PATH_MUNICIPALITY_FIND_BY_ID } from '@/api/municipality.js';
+import type { MunicipalityFindByIdPathParams, MunicipalityFindByIdResponse } from '@/api/municipality.js';
 
 const FORCE_CACHE: RequestInit = { cache: 'force-cache' };
 

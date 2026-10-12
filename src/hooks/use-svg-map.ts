@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
-import { useFetch } from './use-fetch.js';
-import { parseSvgPaths } from '../helpers/svg.js';
-import type { SvgPath } from '../lib/second-turn.js';
+import { useFetch } from '@/hooks/use-fetch.js';
+import { parseSvgPaths } from '@/helpers/svg.js';
+import type { SvgPath } from '@/lib/second-turn.js';
 
 const FORCE_CACHE: RequestInit = { cache: 'force-cache' };
 

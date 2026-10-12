@@ -1,4 +1,4 @@
-import type { Race } from './tse.js';
+import type { Race } from '@/lib/tse.js';
 
 export const BASE: string = import.meta.env.BASE_URL || '/';
 export const BRAZIL_SVG_URL = `${BASE}maps/brazil.svg`;
@@ -7,34 +7,31 @@ export const MG_MUN_URL = `${BASE}data/mg-municipios.json`; // cache em JSON bru
 
 export const RACE_PRES: Race = {
   id: 'pres-br-2t',
-  ele: '6257',
+  ele: '6258',
   ciclo: 'ele2026',
   ufFoto: 'br',
   titulo: 'Presidente',
-  subtitulo: 'Eleição Ordinária Federal - 2026',
-  url: 'https://resultados.tse.jus.br/oficial/ele2026/6257/dados/br/br-c0001-e006257-u.jws',
+  subtitulo: 'Eleição Ordinária Federal - 2026 · 2º turno',
+  url: 'https://resultados.tse.jus.br/oficial/ele2026/6258/dados/br/br-c0001-e006258-u.jws',
   tipo: 'majoritario',
 };
 export const RACE_PRES_MG: Race = {
   id: 'pres-mg-2t',
-  ele: '6257',
+  ele: '6258',
   ciclo: 'ele2026',
   ufFoto: 'br', // fotos dos presidenciáveis ficam na pasta nacional
   titulo: 'Presidente em MG',
-  subtitulo: 'Eleição Ordinária Federal - 2026',
-  url: 'https://resultados.tse.jus.br/oficial/ele2026/6257/dados/mg/mg-c0001-e006257-u.jws',
+  subtitulo: 'Eleição Ordinária Federal - 2026 · 2º turno',
+  url: 'https://resultados.tse.jus.br/oficial/ele2026/6258/dados/mg/mg-c0001-e006258-u.jws',
   tipo: 'majoritario',
 };
 
-// Endpoints do 2º turno ainda desconhecidos: não busca nem exibe nada do 1º turno.
-// Os cards ficam em branco (placeholders) até o TSE publicar; basta ligar
-// ROUND2_LIVE que busca, legendas, % e mapas preenchem sozinhos.
-export const ROUND2_LIVE = false;
+// Endpoints do 2º turno (ele 6258) no ar: busca e exibe dados reais.
+// Com ROUND2_LIVE, buscas, legendas, % e mapas preenchem sozinhos.
+export const ROUND2_LIVE = true;
 
-// Sem endpoints do 2º turno por UF: tudo em cinza claro (mesma regra das micros de MG).
-// O pipeline (fetchUFs → ufWinners) continua ativo; quando os endpoints saírem,
-// basta ligar USE_ROUND2_GEO para pintar cada UF de azul/vermelho pelo vencedor local.
-export const USE_ROUND2_GEO = false;
+// Varredura por UF do 2º turno ativa: cada estado pinta de azul/vermelho pelo vencedor local.
+export const USE_ROUND2_GEO = true;
 // Cores fixas da disputa presidencial: Flávio Bolsonaro = azul, Lula = vermelho
 export const JAIR_BLUE = '#2563eb';
 export const LULA_RED = '#dc2626';

@@ -1,8 +1,8 @@
-import { MicroPath } from './MicroPath';
-import { MunPath } from './MunPath';
-import { fmtPct } from '../../../helpers/election.js';
-import type { Candidate } from '../../../lib/tse.js';
-import type { SvgPath } from '../../../lib/second-turn.js';
+import { MicroPath } from '@/pages/second-turn/components/MicroPath';
+import { MunPath } from '@/pages/second-turn/components/MunPath';
+import { fmtPct } from '@/helpers/election.js';
+import type { Candidate } from '@/lib/tse.js';
+import type { SvgPath } from '@/lib/second-turn.js';
 
 interface MinasMapProps {
   microPaths: SvgPath[];

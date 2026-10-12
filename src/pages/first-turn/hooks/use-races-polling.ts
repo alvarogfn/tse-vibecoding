@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
-import { RACES, fetchRaceJson, parseRace, sharePct } from '../../../lib/tse.js'
-import type { Candidate, ParsedRace } from '../../../lib/tse.js'
-import { loadHistory, appendSnapshot, clearHistory, hashVotes } from '../../../lib/history.js'
-import type { Snapshot, HistoryMap } from '../../../lib/history.js'
-import { buildEffectiveHistory, isComplete } from '../../../helpers/election.js'
+import { RACES, fetchRaceJson, parseRace, sharePct } from '@/lib/tse.js'
+import type { Candidate, ParsedRace } from '@/lib/tse.js'
+import { loadHistory, appendSnapshot, clearHistory, hashVotes } from '@/lib/history.js'
+import type { Snapshot, HistoryMap } from '@/lib/history.js'
+import { buildEffectiveHistory, isComplete } from '@/helpers/election.js'
 
 const REFRESH_MS = 5000
 

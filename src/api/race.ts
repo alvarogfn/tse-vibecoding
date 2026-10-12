@@ -1,4 +1,4 @@
-import type { TseRawPayload } from '../lib/tse.js';
+import type { TseRawPayload } from '@/lib/tse.js';
 
 /** Arquivo único de apuração TSE (JWS): /oficial/{ciclo}/{ele}/dados/{scope}/{file}.jws */
 export const PATH_RACE_FIND_BY_ID =

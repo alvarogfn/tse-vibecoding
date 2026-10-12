@@ -1,28 +1,31 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
-import { UFS, fmtInt } from '../../lib/tse.js';
+import { UFS, fmtInt } from '@/lib/tse.js';
 import {
   BRAZIL_SVG_URL,
   MG_SVG_URL,
   MICRO_GRAY,
   ROUND2_LIVE,
   USE_ROUND2_GEO,
-} from '../../lib/second-turn.js';
-import { finalistColor, fmtPct } from '../../helpers/election.js';
-import { useSvgMap } from '../../hooks/use-svg-map';
-import { usePolling } from '../../hooks/use-polling';
-import { useSecondTurnTop } from './hooks/use-second-turn-top';
-import { useUfRacesFindAll } from './hooks/use-uf-races-find-all';
-import { useMgGeo } from './hooks/use-mg-geo';
-import { CandLegend } from './components/CandLegend';
-import { BrazilMap } from './components/BrazilMap';
-import { MinasMap } from './components/MinasMap';
-import { MapCard } from './components/MapCard';
+} from '@/lib/second-turn.js';
+import { finalistColor, fmtPct } from '@/helpers/election.js';
+import { useSvgMap } from '@/hooks/use-svg-map';
+import { usePolling } from '@/hooks/use-polling';
+import { useSecondTurnTop } from '@/pages/second-turn/hooks/use-second-turn-top';
+import { useUfRacesFindAll } from '@/pages/second-turn/hooks/use-uf-races-find-all';
+import { useMgGeo } from '@/pages/second-turn/hooks/use-mg-geo';
+import { CandLegend } from '@/pages/second-turn/components/CandLegend';
+import { BrazilMap } from '@/pages/second-turn/components/BrazilMap';
+import { MinasMap } from '@/pages/second-turn/components/MinasMap';
+import { MapCard } from '@/pages/second-turn/components/MapCard';
+import { PredictorCard } from '@/pages/second-turn/components/PredictorCard';
+import { pushPredictorInputs } from '@/lib/election-predictor/index.js';
+import type { PredictorInputs, PredictorUfInput } from '@/lib/election-predictor/index.js';
 
 export default function SegundoTurno(): React.JSX.Element {
   const { pres, presMG, presErr, presMGErr, loading, refetch: fetchTop } = useSecondTurnTop();
   const presTop2ForUf = useMemo(() => (pres?.candidatos || []).slice(0, 2).map((c) => String(c.numero)), [pres]);
-  const { ufWinners, ufMeta } = useUfRacesFindAll(presTop2ForUf, ROUND2_LIVE && !!pres);
+  const { ufWinners, ufMeta, ufStats, refetch: refetchUFs } = useUfRacesFindAll(presTop2ForUf, ROUND2_LIVE && !!pres);
   // { microId (ex. micro_310519): numero do vencedor na microrregião } — vazio até o TSE publicar o 2º turno
   const [winnersByMicro, setWinnersByMicro] = useState<Record<string, string>>({});
   const [auto, setAuto] = useState<boolean>(true);
@@ -41,6 +44,9 @@ export default function SegundoTurno(): React.JSX.Element {
   const handleMunHover = useCallback((id: string | null) => setHoverMun(id), []);
 
   usePolling(fetchTop, 15000, auto && ROUND2_LIVE);
+  // Varredura das UFs em cadência própria (mais lenta): sem isso o mapa do
+  // Brasil + preditor congelariam nos primeiros vencedores (H1-página).
+  usePolling(refetchUFs, 60000, auto && ROUND2_LIVE);
 
   const presTop2 = useMemo(() => (pres?.candidatos || []).slice(0, 2), [pres]);
   const mgTop2 = useMemo(() => (presMG?.candidatos || []).slice(0, 2), [presMG]);
@@ -69,6 +75,38 @@ export default function SegundoTurno(): React.JSX.Element {
     });
     return m;
   }, [mgTop2]);
+
+  // Fail-Fast contract: inputs do preditor derivam do estado apurado; o push
+  // propaga ao store TF.js e erros sobem ao ErrorBoundary (sem try/catch no meio).
+  const predictorInputs = useMemo<PredictorInputs>(() => {
+    const fullName = (c: { nomeUrna: string; nomeFull: string }): string =>
+      `${c.nomeUrna || ''} ${c.nomeFull || ''}`.toUpperCase();
+    const lula = presTop2.find((c) => fullName(c).includes('LULA'));
+    const flavio = presTop2.find((c) => fullName(c).includes('BOLSONARO') || fullName(c).includes('FLAVIO'));
+    void flavio; // outro finalista (2T: 100 − Lula); o contrato só carrega lulaShare.
+    const lulaNumero = lula ? String(lula.numero) : null;
+    const ufs: PredictorUfInput[] = Object.entries(ufStats).map(([uf, st]) => {
+      const lulaShare = lulaNumero ? (st.top.find((t) => String(t.numero) === lulaNumero)?.pvapNum ?? null) : null;
+      const winner = ufWinners[uf];
+      const input: PredictorUfInput = {
+        uf,
+        counted: st.pst,
+        lulaShare,
+        validos: st.validos,
+        eleitorado: st.eleitorado,
+      };
+      const color = winner ? presColors[winner.numero] : undefined;
+      if (color) input.color = color;
+      return input;
+    });
+    const nationalCounted = pres ? parseFloat(String(pres.meta?.s?.pst ?? '0').replace(',', '.')) || 0 : 0;
+    const nationalShare = lula ? lula.pvapNum : null;
+    return { ufs, nationalCounted, nationalShare };
+  }, [pres, presTop2, presColors, ufStats, ufWinners]);
+
+  useEffect(() => {
+    pushPredictorInputs(predictorInputs);
+  }, [predictorInputs]);
 
   const brFill = useCallback(
     (pathId: string): string => {
@@ -218,6 +256,9 @@ export default function SegundoTurno(): React.JSX.Element {
             </div>
           </MapCard>
         </div>
+        <section className="st-card st-full">
+          <PredictorCard />
+        </section>
         <div className="footer">2º turno · presidente por UF (27 arquivos TSE) · presidente em MG por microrregião (cinza = aguardando endpoint do 2º turno)</div>
       </div>
     </div>

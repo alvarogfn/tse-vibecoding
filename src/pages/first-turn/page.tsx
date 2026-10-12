@@ -12,11 +12,11 @@ import {
 } from 'chart.js'
 import { Virtuoso } from 'react-virtuoso'
 import { Link } from 'react-router'
-import { RACES, COLUMNS, UFS } from '../../lib/tse.js'
-import type { Candidate, Race } from '../../lib/tse.js'
-import { RaceChart, Summary, CandCard, CeDetail, UFColumn, BrazilColumn, fuzzyFilter } from './components'
-import { useRacesPolling, useUFsSweep, useFirstTurnUI } from './hooks'
-import { ErrorBoundary } from '../../components/ErrorBoundary.js'
+import { RACES, COLUMNS, UFS } from '@/lib/tse.js'
+import type { Candidate, Race } from '@/lib/tse.js'
+import { RaceChart, Summary, CandCard, CeDetail, UFColumn, BrazilColumn, fuzzyFilter } from '@/pages/first-turn/components'
+import { useRacesPolling, useUFsSweep, useFirstTurnUI } from '@/pages/first-turn/hooks'
+import { ErrorBoundary } from '@/components/ErrorBoundary.js'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Title, Tooltip, Legend)
 

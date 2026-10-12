@@ -1,9 +1,9 @@
 import { useMemo } from 'react'
 import type { ChartData, ChartOptions, TooltipItem } from 'chart.js'
 import { Pie } from 'react-chartjs-2'
-import { UFS, aggregateParties, partyColor, fmtInt } from '../../../lib/tse.js'
-import type { AggParty, UFData } from '../../../lib/tse.js'
-import type { BrazilMeta } from '../../../helpers/election.js'
+import { UFS, aggregateParties, partyColor, fmtInt } from '@/lib/tse.js'
+import type { AggParty, UFData } from '@/lib/tse.js'
+import type { BrazilMeta } from '@/helpers/election.js'
 
 export interface BrazilColumnProps {
   ufs: Record<string, UFData>;

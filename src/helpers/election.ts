@@ -1,8 +1,8 @@
 import FuzzySearch from 'fuzzy-search';
-import { LULA_RED, JAIR_BLUE } from '../lib/second-turn.js';
-import { partyColor, sharePct } from '../lib/tse.js';
-import type { Candidate, ParsedRace } from '../lib/tse.js';
-import type { HistoryMap, Snapshot } from '../lib/history.js';
+import { LULA_RED, JAIR_BLUE } from '@/lib/second-turn.js';
+import { partyColor, sharePct } from '@/lib/tse.js';
+import type { Candidate, ParsedRace } from '@/lib/tse.js';
+import type { HistoryMap, Snapshot } from '@/lib/history.js';
 
 // Contratos compartilhados (tipos puros, sem lifecycle).
 export type Metric = 'pct' | 'votos';

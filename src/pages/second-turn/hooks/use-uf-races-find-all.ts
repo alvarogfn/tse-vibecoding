@@ -1,10 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
-import { UFS, fetchRaceJson, parseRace } from '../../../lib/tse.js';
-import type { Candidate } from '../../../lib/tse.js';
-import { RACE_PRES } from '../../../lib/second-turn.js';
-import type { UFWinner, UFMeta } from '../../../lib/second-turn.js';
-import { mountURL } from '../../../helpers/mount-url.js';
-import { PATH_RACE_FIND_BY_ID, buildRaceFile } from '../../../api/race.js';
+import { UFS, fetchRaceJson, parseRace } from '@/lib/tse.js';
+import type { Candidate } from '@/lib/tse.js';
+import { RACE_PRES } from '@/lib/second-turn.js';
+import type { UFWinner, UFMeta } from '@/lib/second-turn.js';
+import { mountURL } from '@/helpers/mount-url.js';
+import { PATH_RACE_FIND_BY_ID, buildRaceFile } from '@/api/race.js';
+
+export interface UfRaceStat {
+  pst: number;
+  validos: number;
+  eleitorado: number;
+  top: Array<{ numero: string; pvapNum: number }>;
+}
 
 // Fail-Safe contract: per-UF failures stay neutral (UF sem dado — mantém neutra),
 // sweep-level failures resolve to error state — never throws.
@@ -14,6 +21,7 @@ import { PATH_RACE_FIND_BY_ID, buildRaceFile } from '../../../api/race.js';
 // As URLs saem do catálogo /api via mountURL (pathParams por UF).
 export const useUfRacesFindAll = (topNumeros: string[], enabled: boolean) => {
   const [ufWinners, setUfWinners] = useState<Record<string, UFWinner>>({});
+  const [ufStats, setUfStats] = useState<Record<string, UfRaceStat>>({});
   const [ufMeta, setUfMeta] = useState<UFMeta>({ done: 0, total: UFS.length, at: null });
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -22,6 +30,7 @@ export const useUfRacesFindAll = (topNumeros: string[], enabled: boolean) => {
     // Colore cada UF pelo vencedor entre os 2 finalistas (ou líder local se 2T ainda sem ele próprio)
     try {
       const out: Record<string, UFWinner> = {};
+      const stats: Record<string, UfRaceStat> = {};
       for (let i = 0; i < UFS.length; i += 4) {
         const batch = UFS.slice(i, i + 4);
         await Promise.all(
@@ -47,6 +56,13 @@ export const useUfRacesFindAll = (topNumeros: string[], enabled: boolean) => {
                   pst: parsed.meta?.s?.pst,
                   vap: win.vap,
                 };
+              // Derivação p/ o preditor (TF.js): apuração, válidos, eleitorado e top-2 local.
+              stats[uf] = {
+                pst: parseFloat(String(parsed.meta?.s?.pst ?? '0').replace(',', '.')) || 0,
+                validos: parsed.meta?.validos ?? 0,
+                eleitorado: Number(parsed.meta?.e?.te ?? 0) || 0,
+                top: cands.slice(0, 2).map((c) => ({ numero: String(c.numero), pvapNum: c.pvapNum })),
+              };
             } catch {
               /* UF sem dado — mantém neutra */
             }
@@ -56,6 +72,7 @@ export const useUfRacesFindAll = (topNumeros: string[], enabled: boolean) => {
         setUfMeta({ done, total: UFS.length, at: null });
       }
       setUfWinners(out);
+      setUfStats(stats);
       setUfMeta({ done: UFS.length, total: UFS.length, at: new Date().toLocaleTimeString('pt-BR') });
       setError(null);
     } catch (e: unknown) {
@@ -78,5 +95,5 @@ export const useUfRacesFindAll = (topNumeros: string[], enabled: boolean) => {
   }, [enabled, topKey, fetchUFs]);
 
   const data: Record<string, UFWinner> = ufWinners;
-  return { data, ufWinners, ufMeta, meta: ufMeta, error, loading, refetch };
+  return { data, ufWinners, ufStats, ufMeta, meta: ufMeta, error, loading, refetch };
 };

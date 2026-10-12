@@ -35,7 +35,7 @@ import {
   weightOf,
 } from '@/lib/election-predictor/features.js';
 import type { TfModule } from '@/lib/election-predictor/analytic-model.js';
-import { ensurePretrainedModel, fineTuneModel } from '@/lib/election-predictor/training.js';
+import { ensurePretrainedModel, fineTuneModel, resetSavedModel } from '@/lib/election-predictor/training.js';
 import { fetchFirstTurnBaselines } from '@/lib/election-predictor/baselines.js';
 import type { FirstTurnBaseline } from '@/lib/election-predictor/baselines.js';
 import { onlineRows } from '@/lib/election-predictor/dataset.js';
@@ -420,6 +420,9 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
 // Contract
 // ---------------------------------------------------------------------------
 
+/** Últimos inputs válidos — p/ retreinar do zero sem esperar o próximo poll. */
+let lastSanitized: SanitizedInputs | null = null;
+
 export function pushPredictorInputs(inputs: PredictorInputs): void {
   const ufs = Array.isArray(inputs.ufs) ? inputs.ufs : [];
   if (ufs.length === 0) {
@@ -440,6 +443,7 @@ export function pushPredictorInputs(inputs: PredictorInputs): void {
   const key = inputsKey(sanitized);
   if (key === lastInputsKey) return;
   lastInputsKey = key;
+  lastSanitized = sanitized;
   const myRun = runId + 1;
   runId = myRun;
   // Keep the previous series visible while the new pass computes.
@@ -449,4 +453,34 @@ export function pushPredictorInputs(inputs: PredictorInputs): void {
 
 export function useElectionPredictor(): PredictorSnapshot {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+}
+
+/**
+ * Apaga o modelo salvo e retreina DO ZERO com os dados atuais (1T ponderado
+ * + snapshots 2T já apurados, mantidos). O próximo push continua incremental.
+ */
+export function retrainPredictorFromScratch(): void {
+  const myRun = runId + 1;
+  runId = myRun;
+  lastInputsKey = null;
+  setSnapshot({ status: 'loading', series: current.series, updatedAt: current.updatedAt, error: null });
+  void (async (): Promise<void> => {
+    try {
+      const tf: TfModule = await import('@tensorflow/tfjs');
+      await tf.ready();
+      await resetSavedModel(tf);
+      if (myRun !== runId || lastSanitized == null) return;
+      // Marca como processado p/ o próximo poll idêntico não repetir o passe.
+      lastInputsKey = inputsKey(lastSanitized);
+      await recompute(lastSanitized, myRun);
+    } catch (err) {
+      if (myRun !== runId) return;
+      setSnapshot({
+        status: 'error',
+        series: current.series,
+        updatedAt: current.updatedAt,
+        error: err instanceof Error && err.message.trim() ? err.message : 'Falha ao retreinar do zero.',
+      });
+    }
+  })();
 }

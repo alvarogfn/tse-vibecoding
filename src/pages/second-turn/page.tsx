@@ -7,8 +7,10 @@ import {
   MICRO_GRAY,
   ROUND2_LIVE,
   USE_ROUND2_GEO,
+  JAIR_BLUE,
+  LULA_RED,
 } from '@/lib/second-turn.js';
-import { finalistColor, fmtPct } from '@/helpers/election.js';
+import { finalistColor, fmtPct, hasRealCount } from '@/helpers/election.js';
 import { useSvgMap } from '@/hooks/use-svg-map';
 import { usePolling } from '@/hooks/use-polling';
 import { useSecondTurnTop } from '@/pages/second-turn/hooks/use-second-turn-top';
@@ -19,7 +21,7 @@ import { BrazilMap } from '@/pages/second-turn/components/BrazilMap';
 import { MinasMap } from '@/pages/second-turn/components/MinasMap';
 import { MapCard } from '@/pages/second-turn/components/MapCard';
 import { PredictorCard } from '@/pages/second-turn/components/PredictorCard';
-import { pushPredictorInputs } from '@/lib/election-predictor/index.js';
+import { pushPredictorInputs, useElectionPredictor } from '@/lib/election-predictor/index.js';
 import type { PredictorInputs, PredictorUfInput } from '@/lib/election-predictor/index.js';
 
 export default function SegundoTurno(): React.JSX.Element {
@@ -76,6 +78,31 @@ export default function SegundoTurno(): React.JSX.Element {
     return m;
   }, [mgTop2]);
 
+  // Projeção do modelo por UF (final Lula em x=100): pinta o estado com a cor
+  // do vencedor projetado até chegar apurado real.
+  const { series: predictorSeries } = useElectionPredictor();
+  const projected = useMemo(() => {
+    const colors: Record<string, string> = {};
+    const names: Record<string, string> = {};
+    const fullName = (c: { nomeUrna: string; nomeFull: string }): string =>
+      `${c.nomeUrna || ''} ${c.nomeFull || ''}`.toUpperCase();
+    const lu = presTop2.find((c) => fullName(c).includes('LULA'));
+    const fl = presTop2.find((c) => fullName(c).includes('BOLSONARO') || fullName(c).includes('FLAVIO'));
+    if (!lu || !fl) return { colors, names };
+    for (const s of predictorSeries) {
+      if (s.kind !== 'uf') continue;
+      const last = s.estimate[s.estimate.length - 1];
+      if (last?.y == null) continue;
+      const lulaFinal = last.y;
+      const win = lulaFinal >= 50 ? lu : fl;
+      const uf = s.id.replace('uf-', '');
+      colors[uf] = presColors[win.numero] ?? (win === lu ? LULA_RED : JAIR_BLUE);
+      // Tooltip/hint exibem "projeção: NOME %" com o % do vencedor projetado.
+      names[uf] = `${win.nomeUrna} ${fmtPct(win === lu ? lulaFinal : 100 - lulaFinal)}`;
+    }
+    return { colors, names };
+  }, [predictorSeries, presTop2, presColors]);
+
   // Fail-Fast contract: inputs do preditor derivam do estado apurado; o push
   // propaga ao store TF.js e erros sobem ao ErrorBoundary (sem try/catch no meio).
   const predictorInputs = useMemo<PredictorInputs>(() => {
@@ -112,11 +139,13 @@ export default function SegundoTurno(): React.JSX.Element {
     (pathId: string): string => {
       if (!USE_ROUND2_GEO) return MICRO_GRAY;
       const uf = pathId.replace('BR-', '').toLowerCase();
+      // 1. vencedor real (com urna apurada); 2. projeção do modelo; 3. cinza.
       const w = ufWinners[uf];
-      if (w && presColors[w.numero]) return presColors[w.numero];
+      if (w && hasRealCount(w) && presColors[w.numero]) return presColors[w.numero] as string;
+      if (projected.colors[uf]) return projected.colors[uf] as string;
       return MICRO_GRAY;
     },
-    [ufWinners, presColors],
+    [ufWinners, presColors, projected],
   );
 
   // Cor de cada microrregião pelo vencedor local (azul/vermelho); cinza claro sem dados do 2º turno
@@ -130,9 +159,13 @@ export default function SegundoTurno(): React.JSX.Element {
   );
 
   const countedUFs = Object.keys(ufWinners).length;
+  // UFs pintadas pela projeção (sem apurado real): informa no hint.
+  const projCount = Object.keys(projected.names).filter(
+    (uf) => !(ufWinners[uf] && hasRealCount(ufWinners[uf])),
+  ).length;
 
   return (
-    <div className="page">
+    <div className="page page-scroll">
       <div className="topbar">
         <h1>2º turno 2026</h1>
         <div className="sub">Presidente · Brasil à esquerda · Minas Gerais à direita</div>
@@ -186,11 +219,15 @@ export default function SegundoTurno(): React.JSX.Element {
                 ? (() => {
                     const uf = hoverUF.replace('BR-', '').toLowerCase();
                     const w = ufWinners[uf];
-                    return USE_ROUND2_GEO && w
-                      ? `${uf.toUpperCase()} · ${w.nome} (${w.partido}) ${fmtPct(w.pvapNum)}`
+                    if (USE_ROUND2_GEO && w && hasRealCount(w)) {
+                      return `${uf.toUpperCase()} · ${w.nome} (${w.partido}) ${fmtPct(w.pvapNum)}`;
+                    }
+                    const proj = projected.names[uf];
+                    return proj
+                      ? `${uf.toUpperCase()} · projeção: ${proj}`
                       : `${uf.toUpperCase()} · sem dados do 2º turno`;
                   })()
-                : `Flávio Bolsonaro (azul) · Lula (vermelho) · sem dados (cinza) · ${ufMeta.done}/${ufMeta.total} UFs${ufMeta.at ? ` · ${ufMeta.at}` : ''}`
+                : `Flávio Bolsonaro (azul) · Lula (vermelho) · sem dados (cinza) · ${projCount} UFs em projeção · ${ufMeta.done}/${ufMeta.total} UFs${ufMeta.at ? ` · ${ufMeta.at}` : ''}`
             }
           >
             <CandLegend cands={presTop2Shown} colors={presColors} />
@@ -198,7 +235,14 @@ export default function SegundoTurno(): React.JSX.Element {
               {br.loading && <div className="hint">Carregando mapa do Brasil…</div>}
               {br.error && <div className="err">{br.error}</div>}
               {!br.loading && !br.error && (
-                <BrazilMap paths={br.paths} fill={brFill} hoverId={hoverUF} onHover={setHoverUF} winners={ufWinners} />
+                <BrazilMap
+                  paths={br.paths}
+                  fill={brFill}
+                  hoverId={hoverUF}
+                  onHover={setHoverUF}
+                  winners={ufWinners}
+                  projected={projected.names}
+                />
               )}
             </div>
           </MapCard>

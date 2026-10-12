@@ -2,6 +2,7 @@ import FuzzySearch from 'fuzzy-search';
 import { LULA_RED, JAIR_BLUE } from '@/lib/second-turn.js';
 import { partyColor, sharePct } from '@/lib/tse.js';
 import type { Candidate, ParsedRace } from '@/lib/tse.js';
+import type { UFWinner } from '@/lib/second-turn.js';
 import type { HistoryMap, Snapshot } from '@/lib/history.js';
 
 // Contratos compartilhados (tipos puros, sem lifecycle).
@@ -52,10 +53,23 @@ export function shareFromSnap(snap: Snapshot | null | undefined, numero: string)
 }
 
 // 100% apurado = seções totalizadas (pst) chegou a 100. Puro.
-export function isComplete(parsed: ParsedRace | null | undefined): boolean {
-  const s = parsed?.meta?.s;
+export function isComplete(parsed: ParsedRace | null | undefined): boolean {  const s = parsed?.meta?.s;
   if (!s) return false;
   return parseFloat(String(s.pstn ?? s.pst ?? '0').replace(',', '.')) >= 100;
+}
+
+/**
+ * O vencedor da UF é "real" (apurado) só com urna contada ou voto registrado.
+ * Sem isso, vap zerado elegeria o 1º finalista da lista — o mapa inteiro
+ * ficava azul com 0% apurado. Puro.
+ */
+export function hasRealCount(w: UFWinner | null | undefined): boolean {
+  if (!w) return false;
+  const pst =
+    typeof w.pst === 'number'
+      ? w.pst
+      : parseFloat(String(w.pst ?? '0').replace(/\./g, '').replace(',', '.')) || 0;
+  return pst > 0 || (w.vap ?? 0) > 0;
 }
 
 /**

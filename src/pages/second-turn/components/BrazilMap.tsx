@@ -1,5 +1,5 @@
 import { USE_ROUND2_GEO } from '@/lib/second-turn.js';
-import { fmtPct } from '@/helpers/election.js';
+import { fmtPct, hasRealCount } from '@/helpers/election.js';
 import type { SvgPath, UFWinner } from '@/lib/second-turn.js';
 
 interface BrazilMapProps {
@@ -8,15 +8,24 @@ interface BrazilMapProps {
   hoverId: string | null;
   onHover: (id: string | null) => void;
   winners: Record<string, UFWinner>;
+  /** Nome do vencedor projetado pelo modelo por UF (sem apurado ainda). */
+  projected: Record<string, string>;
 }
 
 // Camada do mapa do Brasil (preenchimento por UF). Pura: sem fetch, sem estado.
-export function BrazilMap({ paths, fill, hoverId, onHover, winners }: BrazilMapProps): React.JSX.Element {
+export function BrazilMap({ paths, fill, hoverId, onHover, winners, projected }: BrazilMapProps): React.JSX.Element {
   return (
     <svg viewBox="0 0 612.51611 639.04297" className="st-svg" role="img" aria-label="Mapa do Brasil">
       {paths.map((p) => {
         const uf = p.id.replace('BR-', '').toLowerCase();
         const w = winners[uf];
+        const proj = projected[uf];
+        const suffix =
+          USE_ROUND2_GEO && w && hasRealCount(w)
+            ? ` · ${w.nome} ${fmtPct(w.pvapNum)}`
+            : proj
+              ? ` · projeção: ${proj}`
+              : ' · sem dados do 2º turno';
         return (
           <path
             key={p.id}
@@ -29,7 +38,7 @@ export function BrazilMap({ paths, fill, hoverId, onHover, winners }: BrazilMapP
             onMouseEnter={() => onHover(p.id)}
             onMouseLeave={() => onHover(null)}
           >
-            <title>{`${p.title} (${uf.toUpperCase()})${USE_ROUND2_GEO && w ? ` · ${w.nome} ${fmtPct(w.pvapNum)}` : ' · sem dados do 2º turno'}`}</title>
+            <title>{`${p.title} (${uf.toUpperCase()})${suffix}`}</title>
           </path>
         );
       })}

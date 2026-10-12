@@ -8,7 +8,7 @@ body {
   color: #fafafa;
   font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
   font-size: 12px;
-  overflow: hidden;
+  overflow: auto;
 }
 a { color: inherit; }
 * { box-sizing: border-box; }
@@ -43,4 +43,16 @@ a { color: inherit; }
    .page/.st-grid/.st-card/.st-svg usam `max-[900px]:` nos shortcuts. --- */
 @media (max-width: 900px) {
   body { overflow: auto; }
+}
+
+/* --- Página 2º turno com scroll vertical (desktop): cada bloco ocupa ~100vh
+   para os mapas respirarem; mobile e 1º turno seguem intactos. --- */
+@media (min-width: 901px) {
+  .page-scroll { height: auto; min-height: 100vh; }
+  .page-scroll .topbar { position: sticky; top: 0; z-index: 20; }
+  .page-scroll .wrap { flex: none; }
+  .page-scroll .st-grid { flex: none; min-height: calc(100vh - 70px); }
+  .page-scroll .st-card { min-height: calc(100vh - 86px); }
+  .page-scroll .st-svg { max-height: none; }
+  .page-scroll .st-full { min-height: calc(100vh - 60px); }
 }

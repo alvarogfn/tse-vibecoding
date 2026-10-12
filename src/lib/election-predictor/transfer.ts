@@ -12,11 +12,13 @@
  * dos eliminados, em vez de projetar a repetição crua do 1º turno.
  */
 
-export const TRANSFER_TO_FLAVIO = 0.46;
-export const TRANSFER_TO_LULA = 0.32;
+import { WEIGHTING_POLLS, pollValidLula, migrationRates, pollMarginPP } from '@/lib/election-predictor/weighting.js';
 
-/** Margem de erro do Datafolha (2pp, 95% confiança) aplicada à conversão. */
-export const TRANSFER_MARGIN_PP = 2;
+export const TRANSFER_TO_FLAVIO = migrationRates(WEIGHTING_POLLS).toFlavio;
+export const TRANSFER_TO_LULA = migrationRates(WEIGHTING_POLLS).toLula;
+
+/** Margem de erro ponderada das pesquisas (pp, 95% confiança) aplicada à conversão. */
+export const TRANSFER_MARGIN_PP = pollMarginPP(WEIGHTING_POLLS);
 
 export interface ConvertedPool {
   /** Pontos que o pool eliminado rende (ex. Lula). */
@@ -45,7 +47,7 @@ export function convertEliminated(
 }
 
 /** Espontânea/estimulada convertida p/ prior nacional de share (0–100). */
-export const POLL_VALID_LULA = 48;
+export const POLL_VALID_LULA = pollValidLula(WEIGHTING_POLLS);
 
 /** 1º turno (votos válidos, TSE 4/out/2026). */
 export const FIRST_ROUND_LULA = 45.16;

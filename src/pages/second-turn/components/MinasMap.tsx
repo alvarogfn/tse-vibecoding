@@ -1,6 +1,5 @@
 import { MicroPath } from '@/pages/second-turn/components/MicroPath';
 import { MunPath } from '@/pages/second-turn/components/MunPath';
-import { fmtPct } from '@/helpers/election.js';
 import type { Candidate } from '@/lib/tse.js';
 import type { SvgPath } from '@/lib/second-turn.js';
 
@@ -39,10 +38,9 @@ export function MinasMap({
         return (
           <MicroPath
             key={p.id}
-            id={p.id}
             d={p.d}
             fill={microFill(p.id)}
-            titleText={`Micro ${microNome}${win ? ` · ${win.nomeUrna} ${fmtPct(win.pvapNum)}` : ' · sem dados do 2º turno'}`}
+            titleText={`Micro ${microNome}${win ? ` · ${win.nomeUrna}` : ' · sem dados do 2º turno'}`}
           />
         );
       })}

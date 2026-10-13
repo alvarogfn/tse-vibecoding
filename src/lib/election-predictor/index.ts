@@ -5,7 +5,8 @@
  *  1. Per-UF dense feedforward inference (6 normalized features → sigmoid).
  *  2. Residual-delta-swing vs the structural anchor + stabilization blend
  *     `alpha = min(1, counted/60)` toward the anchor
- *     (anchor = 1T final ?? poll ?? current ?? 50).
+ *     (anchor = 1T transferido (Datafolha 46/32) ?? poll ?? current ?? 50 — mesma
+ *     definição no treino e na inferência).
  *  3. Bottom-up national aggregation: Σ(uf_pred × weight)/Σweight with
  *     weight = eleitorado || validos; Flávio national = 100 − Lula national.
  *
@@ -43,7 +44,7 @@ import type { FirstTurnBaseline } from '@/lib/election-predictor/baselines.js';
 import { onlineRows } from '@/lib/election-predictor/dataset.js';
 import { loadSnapshotSeries, saveSnapshotSeries } from '@/lib/election-predictor/snapshots.js';
 import { rollout, ROLLOUT_SLICES } from '@/lib/election-predictor/rollout.js';
-import { POLL_VALID_LULA } from '@/lib/election-predictor/transfer.js';
+import { POLL_VALID_LULA, transferLulaPrior } from '@/lib/election-predictor/transfer.js';
 
 export interface PredictorPoint {
   x: number;
@@ -164,6 +165,10 @@ function prepareUf(input: PredictorUfInput, base: FirstTurnBaseline | undefined)
   const share = rawShare === 0 && counted <= 0 ? null : rawShare;
   const baseline1T = input.baseline1T ?? base?.lula1T ?? null;
   const pollAvg = input.pollAvg ?? POLL_VALID_LULA;
+  // Âncora única treino/inferência (N5): 1T transferido (N5). Sem baseline,
+  // cai no poll/share como antes — nunca diverge do alvo do fine-tune.
+  const transferred = baseline1T != null ? transferLulaPrior(baseline1T, base?.eliminated ?? null) : null;
+  const anchor = transferred ?? resolveAnchor(baseline1T, pollAvg, share);
   // Viés pró-Lula/PT estrutural: sem dataset multieleição, o próprio 1T da UF
   // é o proxy (UF com Lula alto no 1T = reduto pró-PT) — entra na feature 5.
   const ptBias = input.ptBias ?? (base?.lula1T != null ? base.lula1T / 100 : null);
@@ -276,6 +281,9 @@ interface SanitizedInputs {
  * cycle with the same values — comparing keys avoids recompute + notify, so
  * `useSyncExternalStore` subscribers (and the chart memos) never fire.
  */
+/** Revisão dos baselines 1T — busts o dedup quando as âncoras mudam (N6). */
+let lastBaselinesCount = -1;
+
 function inputsKey(sanitized: SanitizedInputs): string {
   const ufs = sanitized.ufs.map((u) => [
     u.uf,
@@ -307,6 +315,7 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
   // Fase visível no card (o gráfico segue montado; só o texto muda).
   const setPhase = (phase: string | null): void => {
     if (myRun !== runId) return;
+    if (current.phase === phase && current.status === 'loading') return; // sem spam (N15).
     setSnapshot({
       status: 'loading',
       series: current.series,
@@ -327,6 +336,12 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
     const baselines = await fetchFirstTurnBaselines().catch(() => null);
     if (myRun !== runId) return;
     const baseByUf = new Map((baselines ?? []).map((b) => [b.uf.toLowerCase(), b]));
+    // Baselines chegaram depois (ou sumiram): invalida o dedup p/ recalcular
+    // âncoras — senão a âncora fica p/ sempre no fallback do 1º passe (N6).
+    if (baseByUf.size !== lastBaselinesCount) {
+      lastBaselinesCount = baseByUf.size;
+      lastInputsKey = null;
+    }
 
     // Sequential Fail-Fast pass: first throw aborts this run; the catch
     // below converts it to the `error` snapshot (stale runs stay silent).
@@ -372,7 +387,8 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
         seriesChanged = true;
       }
     }
-    if (seriesChanged) void saveSnapshotSeries(Object.fromEntries(sessionSeries));
+    // await (não void): garante last-write-wins na ordem dos runs (N12).
+    if (seriesChanged) await saveSnapshotSeries(Object.fromEntries(sessionSeries));
     await fineTuneModel(tf, model, onlineRows(sessionSeries, baseByUf));
     if (myRun !== runId) return;
 
@@ -499,6 +515,11 @@ export function retrainPredictorFromScratch(): void {
   const myRun = runId + 1;
   runId = myRun;
   lastInputsKey = null;
+  // Sem dados ainda: nada p/ retreinar — idle em vez de loading travado (N14).
+  if (lastSanitized == null) {
+    setSnapshot({ status: 'idle', series: [], updatedAt: null, error: null, note: null, phase: null });
+    return;
+  }
   setSnapshot({ status: 'loading', series: current.series, updatedAt: current.updatedAt, error: null, note: current.note, phase: 'reiniciando treino…' });
   void (async (): Promise<void> => {
     try {

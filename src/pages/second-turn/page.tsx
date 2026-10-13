@@ -10,7 +10,7 @@ import {
   JAIR_BLUE,
   LULA_RED,
 } from '@/lib/second-turn.js';
-import { finalistColor, fmtPct, hasRealCount } from '@/helpers/election.js';
+import { finalistColor, fmtPct, hasRealCount, parseBrPct } from '@/helpers/election.js';
 import { useSvgMap } from '@/hooks/use-svg-map';
 import { usePolling } from '@/hooks/use-polling';
 import { useSecondTurnTop } from '@/pages/second-turn/hooks/use-second-turn-top';
@@ -28,13 +28,12 @@ export default function SegundoTurno(): React.JSX.Element {
   const { pres, presMG, presErr, presMGErr, loading, refetch: fetchTop } = useSecondTurnTop();
   const presTop2ForUf = useMemo(() => (pres?.candidatos || []).slice(0, 2).map((c) => String(c.numero)), [pres]);
   const { ufWinners, ufMeta, ufStats, refetch: refetchUFs } = useUfRacesFindAll(presTop2ForUf, ROUND2_LIVE && !!pres);
-  // { microId (ex. micro_310519): numero do vencedor na microrregião } — vazio até o TSE publicar o 2º turno
-  const [winnersByMicro, setWinnersByMicro] = useState<Record<string, string>>({});
+  // TODO(endpoint 2T por microrregião): winnersByMicro fica {} até o TSE publicar;
+  // então re-adicionar o setter e chamar setWinnersByMicro com o mapa real.
+  const [winnersByMicro] = useState<Record<string, string>>({});
   const [auto, setAuto] = useState<boolean>(true);
   const [hoverUF, setHoverUF] = useState<string | null>(null);
   const [hoverMun, setHoverMun] = useState<string | null>(null);
-
-  void setWinnersByMicro;
 
   const br = useSvgMap(BRAZIL_SVG_URL, 'BR-');
   const mg = useSvgMap(MG_SVG_URL, 'mun_');
@@ -86,8 +85,11 @@ export default function SegundoTurno(): React.JSX.Element {
     const names: Record<string, string> = {};
     const fullName = (c: { nomeUrna: string; nomeFull: string }): string =>
       `${c.nomeUrna || ''} ${c.nomeFull || ''}`.toUpperCase();
-    const lu = presTop2.find((c) => fullName(c).includes('LULA'));
-    const fl = presTop2.find((c) => fullName(c).includes('BOLSONARO') || fullName(c).includes('FLAVIO'));
+    const lu =
+      presTop2.find((c) => String(c.numero) === '13') ?? presTop2.find((c) => fullName(c).includes('LULA'));
+    const fl =
+      presTop2.find((c) => String(c.numero) === '22') ??
+      presTop2.find((c) => fullName(c).includes('BOLSONARO') || fullName(c).includes('FLAVIO'));
     if (!lu || !fl) return { colors, names };
     for (const s of predictorSeries) {
       if (s.kind !== 'uf') continue;
@@ -108,9 +110,9 @@ export default function SegundoTurno(): React.JSX.Element {
   const predictorInputs = useMemo<PredictorInputs>(() => {
     const fullName = (c: { nomeUrna: string; nomeFull: string }): string =>
       `${c.nomeUrna || ''} ${c.nomeFull || ''}`.toUpperCase();
-    const lula = presTop2.find((c) => fullName(c).includes('LULA'));
-    const flavio = presTop2.find((c) => fullName(c).includes('BOLSONARO') || fullName(c).includes('FLAVIO'));
-    void flavio; // outro finalista (2T: 100 − Lula); o contrato só carrega lulaShare.
+    const lula =
+      presTop2.find((c) => String(c.numero) === '13') ?? presTop2.find((c) => fullName(c).includes('LULA'));
+    // 2T tem 2 finalistas: só o Lula entra no contrato ( share ); Flávio = 100 − Lula.
     const lulaNumero = lula ? String(lula.numero) : null;
     const ufs: PredictorUfInput[] = Object.entries(ufStats).map(([uf, st]) => {
       const lulaShare = lulaNumero ? (st.top.find((t) => String(t.numero) === lulaNumero)?.pvapNum ?? null) : null;
@@ -122,11 +124,14 @@ export default function SegundoTurno(): React.JSX.Element {
         validos: st.validos,
         eleitorado: st.eleitorado,
       };
-      const color = winner ? presColors[winner.numero] : undefined;
+      // Sem urna apurada não há cor: exibir matiz partidária com 0 votos
+      // sugeria apoio inexistente (M1) — cinza/projeção valem até hasRealCount.
+      const w = winner && hasRealCount(winner) ? winner : undefined;
+      const color = w ? presColors[w.numero] : undefined;
       if (color) input.color = color;
       return input;
     });
-    const nationalCounted = pres ? parseFloat(String(pres.meta?.s?.pst ?? '0').replace(',', '.')) || 0 : 0;
+    const nationalCounted = pres ? parseBrPct(pres.meta?.s?.pst) : 0;
     const nationalShare = lula ? lula.pvapNum : null;
     return { ufs, nationalCounted, nationalShare };
   }, [pres, presTop2, presColors, ufStats, ufWinners]);

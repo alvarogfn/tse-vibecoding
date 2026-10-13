@@ -40,8 +40,6 @@ import type * as tfTypes from '@tensorflow/tfjs';
 /** The lazily-imported tfjs module namespace (runtime value, type-only here). */
 export type TfModule = typeof import('@tensorflow/tfjs');
 
-const MODEL_JSON_SUFFIX = 'models/predictor/model.json';
-
 /** Fixed seed ⇒ deterministic hidden projections across sessions. */
 const ANALYTIC_SEED = 20260201;
 
@@ -124,27 +122,6 @@ export function buildAnalyticModel(tf: TfModule): tfTypes.LayersModel {
   // separar as UFs (metas 35–68); com 0.001 os pesos quase não saíam do lugar.
   model.compile({ optimizer: tf.train.adam(0.01), loss: 'meanSquaredError' });
   return model;
-}
-
-let cachedModel: tfTypes.LayersModel | null = null;
-
-/**
- * Process-wide model singleton. Tries the published trained checkpoint
- * first; on ANY failure uses the analytic prior (documented above).
- * The resolved model is cached — weights are set exactly once.
- */
-export async function getPredictorModel(tf: TfModule): Promise<tfTypes.LayersModel> {
-  if (cachedModel) return cachedModel;
-  const url = `${import.meta.env.BASE_URL}${MODEL_JSON_SUFFIX}`;
-  try {
-    cachedModel = await tf.loadLayersModel(url);
-    return cachedModel;
-  } catch {
-    // Fail-Safe: no trained checkpoint available (expected until one is
-    // published) — fall through to deterministic analytic priors.
-  }
-  cachedModel = buildAnalyticModel(tf);
-  return cachedModel;
 }
 
 /**

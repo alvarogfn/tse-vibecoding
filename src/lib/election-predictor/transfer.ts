@@ -14,7 +14,6 @@
 
 import { WEIGHTING_POLLS, pollValidLula, migrationRates, pollMarginPP } from '@/lib/election-predictor/weighting.js';
 
-export const TRANSFER_TO_FLAVIO = migrationRates(WEIGHTING_POLLS).toFlavio;
 export const TRANSFER_TO_LULA = migrationRates(WEIGHTING_POLLS).toLula;
 
 /** Margem de erro ponderada das pesquisas (pp, 95% confiança) aplicada à conversão. */
@@ -67,10 +66,5 @@ export function transferLulaPrior(lula1T: number | null, eliminated: number | nu
   const pool = eliminated != null && Number.isFinite(eliminated) ? Math.max(0, eliminated) : 0;
   return clampPct(lula1T + TRANSFER_TO_LULA * pool);
 }
-
-/** Espelho p/ Flávio (documenta os 46%; o agregado usa 100 − Lula). */
-export function transferFlavioPrior(flavio1T: number | null, eliminated: number | null): number {
-  if (flavio1T == null || !Number.isFinite(flavio1T)) return 100 - POLL_VALID_LULA;
-  const pool = eliminated != null && Number.isFinite(eliminated) ? Math.max(0, eliminated) : 0;
-  return clampPct(flavio1T + TRANSFER_TO_FLAVIO * pool);
-}
+// Nota: sem espelho p/ Flávio — o agregado usa 100 − Lula (menos código,
+// sem divergência). Os 46% vivem em weighting.ts (migração Datafolha).

@@ -14,29 +14,17 @@ export interface SessionPoint {
 }
 
 /**
- * Alvo de treino = âncora com transferência (0–1). HONESTIDADE METODOLÓGICA:
- * o final real do 2T é desconhecido durante a apuração; o fit destila a
- * âncora (1T transferido/polls) e a modulação pela evidência parcial, para
- * que os pesos acompanhem os dados que chegam em vez de ficarem congelados
- * nos priors analíticos. Não é aprendizado do resultado final.
- */
-export function anchorTarget01(baseline1T: number | null, eliminated: number | null, poll: number | null, share: number | null): number {
-  const transferred =
-    baseline1T != null ? transferLulaPrior(baseline1T, eliminated) : null;
-  const anchor = transferred ?? poll ?? share ?? POLL_VALID_LULA;
-  const v = anchor / 100;
-  return Math.min(1, Math.max(0, v));
-}
-
-/**
  * Linhas de pré-treino das SÉRIES temporais do 1T (1-turn-data/): cada
  * instante vira uma linha (features no instante → alvo = final transferido).
  * É aqui que o modelo vê a dinâmica por tempo (flutuações reais de 4/out),
- * não só o ponto final. UFs usam a curva do líder local como share.
+ * não só o ponto final.
+ * IMPORTANTE: resumo-uf só traz o share do LÍDER — instantes liderados por
+ * outro candidato são descartados (N1). Sem isso, ex.: share 60 do Flávio
+ * com alvo 40 do Lula ensinava mapeamento invertido e corrompia o warm-start.
  */
 export function seriesPretrainRows(
   national: Array<{ counted: number; share: number }>,
-  byUf: ReadonlyMap<string, Array<{ counted: number; share: number }>>,
+  byUf: ReadonlyMap<string, Array<{ counted: number; share: number; numero?: string }>>,
   finalOf: (uf: string | null) => { lula1T: number | null; eliminated: number | null },
 ): TrainRow[] {
   const rows: TrainRow[] = [];
@@ -61,6 +49,9 @@ export function seriesPretrainRows(
     const anchor = transferLulaPrior(f.lula1T, f.eliminated);
     for (const p of pts) {
       if (!Number.isFinite(p.counted) || !Number.isFinite(p.share)) continue;
+      // Só instantes liderados pelo Lula (nr 13): o share do arquivo é do
+      // líder — usar share alheio como "share do Lula" inverte o sinal (N1).
+      if (String(p.numero ?? '') !== '13') continue;
       rows.push({
         xs: buildFeatureVector({
           counted: p.counted,
@@ -119,7 +110,9 @@ export function onlineRows(
           share,
           baseline1T: base?.lula1T ?? null,
           pollAvg: POLL_VALID_LULA,
-          ptBias: null,
+          // Mesma feature servida na inferência (N4): treinar sempre com 0.5
+          // enquanto o rollout serve 0.35–0.68 enviesava o sinal pró-PT.
+          ptBias: base?.lula1T != null ? base.lula1T / 100 : null,
           anchor,
         }),
         ys: [Math.min(1, Math.max(0, target / 100))],

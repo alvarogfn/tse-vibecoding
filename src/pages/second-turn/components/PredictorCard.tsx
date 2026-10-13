@@ -52,6 +52,7 @@ function PredictorTitle({ busy }: { busy: boolean }): React.JSX.Element {
         type="button"
         className="btn-ghost-sm"
         disabled={busy}
+        aria-label="Retreinar modelo do zero"
         title="Apaga o modelo salvo e retreina do zero (1T ponderado + 2T já apurado)"
         onClick={() => {
           if (confirm('Apagar o modelo salvo e retreinar do zero?')) retrainPredictorFromScratch();
@@ -231,7 +232,7 @@ export function PredictorCard(): React.JSX.Element {
   );
 
   const ariaLabel = useMemo<string>(() => {
-    if ((snapshot.status !== 'ready' && snapshot.status !== 'loading') || snapshot.series.length === 0) {
+    if (snapshot.series.length === 0) {
       return `Previsão do 2º turno: ${snapshot.status}. Gráfico indisponível.`;
     }
     const race = nationalsText(snapshot.series);
@@ -278,7 +279,7 @@ export function PredictorCard(): React.JSX.Element {
     );
   }
 
-  if (snapshot.status === 'error') {
+  if (snapshot.status === 'error' && snapshot.series.length === 0) {
     return (
       <>
         <PredictorTitle busy={busy} />
@@ -300,6 +301,11 @@ export function PredictorCard(): React.JSX.Element {
   return (
     <>
       <PredictorTitle busy={busy} />
+      {snapshot.status === 'error' && (
+        <div className="err" role="alert">
+          {snapshot.error || 'Falha ao carregar previsão.'} — exibindo última projeção válida.
+        </div>
+      )}
       <div className="summary" title="Curvas por UF e Brasil">
         {recalculating
           ? `Recalculando projeção${snapshot.phase ? ` · ${snapshot.phase}` : '…'}`

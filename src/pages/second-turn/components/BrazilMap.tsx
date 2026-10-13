@@ -26,17 +26,21 @@ export function BrazilMap({ paths, fill, hoverId, onHover, winners, projected }:
             : proj
               ? ` · projeção: ${proj}`
               : ' · sem dados do 2º turno';
+        const focused = hoverId === p.id;
         return (
           <path
             key={p.id}
             d={p.d}
             fill={fill(p.id)}
-            fillOpacity={hoverId === p.id ? 1 : 0.9}
-            stroke={hoverId === p.id ? '#facc15' : '#0a0a0a'}
-            strokeWidth={hoverId === p.id ? 2.2 : 1}
+            fillOpacity={focused ? 1 : 0.9}
+            stroke={focused ? '#facc15' : '#0a0a0a'}
+            strokeWidth={focused ? 2.2 : 1}
             style={{ cursor: 'default', transition: 'fill-opacity .15s' }}
             onMouseEnter={() => onHover(p.id)}
             onMouseLeave={() => onHover(null)}
+            tabIndex={0}
+            onFocus={() => onHover(p.id)}
+            onBlur={() => onHover(null)}
           >
             <title>{`${p.title} (${uf.toUpperCase()})${suffix}`}</title>
           </path>

@@ -9,5 +9,5 @@ export function Avatar({ src, name }: { src: string; name: string }) {
     .join('')
     .toUpperCase()
   if (err) return <div className="avatar-fallback">{initials}</div>
-  return <img className="avatar" src={src} alt={name} loading="lazy" onError={() => setErr(true)} />
+  return <img className="avatar" src={src} alt={name} width={26} height={26} loading="lazy" onError={() => setErr(true)} />
 }

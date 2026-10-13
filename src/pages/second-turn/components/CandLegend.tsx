@@ -9,7 +9,7 @@ export function CandLegend({ cands, colors }: { cands: Candidate[]; colors: Reco
     <div className="st-legend">
       {cands.map((c) => (
         <div key={c.numero} className="st-leg-item" title={`${c.nomeFull} · ${c.partido} · ${fmtInt(c.vap)} votos`}>
-          <span className="dot" style={{ background: colors[c.numero], width: 10, height: 10 }} />
+          <span className="dot" style={{ background: colors[c.numero] ?? '#a1a1aa', width: 10, height: 10 }} />
           <Avatar src={c.foto} name={c.nomeUrna} />
           <span className="st-leg-name">{c.nomeUrna}</span>
           <span className="st-leg-party">

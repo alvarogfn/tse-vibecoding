@@ -40,9 +40,12 @@ export async function rollout(
   const n = ufs.length;
   const curves: number[][] = ufs.map(() => []);
   const states: Array<number | null> = ufs.map((u) => u.share);
-  for (let i = 1; i <= slices; i += 1) {
+  // Tudo apurado: 1 ponto terminal por UF (N11) — 1000 pontos empilhados em
+  // x=100 seriam overdraw puro + trabalho p/ tooltip/decimação.
+  const effSlices = ufs.length > 0 && ufs.every((u) => u.counted >= 100) ? 1 : slices;
+  for (let i = 1; i <= effSlices; i += 1) {
     const batch = ufs.map((u, k) => {
-      const x = u.counted + ((100 - u.counted) * i) / slices;
+      const x = u.counted + ((100 - u.counted) * i) / effSlices;
       const s = states[k];
       return buildFeatureVector({
         counted: x,
@@ -57,7 +60,7 @@ export async function rollout(
     for (let k = 0; k < n; k += 1) {
       const u = ufs[k];
       if (!u) continue;
-      const x = u.counted + ((100 - u.counted) * i) / slices;
+      const x = u.counted + ((100 - u.counted) * i) / effSlices;
       const alpha = Math.min(1, x / 60);
       const next = clampPct((1 - alpha) * u.anchor + alpha * clampPct((raws[k] ?? 0.5) * 100));
       states[k] = next;
@@ -71,7 +74,7 @@ export async function rollout(
   }
   // Bottom-up por fatia: Σ(curva × peso)/Σ(pesos) — a nacional flutua junto.
   const nationalLula: number[] = [];
-  for (let i = 0; i < slices; i += 1) {
+  for (let i = 0; i < effSlices; i += 1) {
     let tw = 0;
     let sw = 0;
     let sum = 0;

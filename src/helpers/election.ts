@@ -19,8 +19,22 @@ export function fmtPct(n: number | null | undefined): string {
   return Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
 }
 
+/**
+ * Percentual pt-BR ("12,34" ou 12.5) → number. Ao contrário de parseBrInt,
+ * NÃO remove pontos de milhar: percentual 0–100 nunca tem milhar, e
+ * "12.5" (ponto decimal) viraria 125 (L1).
+ */
+export function parseBrPct(s: string | number | null | undefined): number {
+  if (typeof s === 'number') return Number.isFinite(s) ? s : 0;
+  return parseFloat(String(s ?? '').replace(',', '.')) || 0;
+}
+
 /** Cor fixa da disputa presidencial: Flávio Bolsonaro = azul, Lula = vermelho. Puro. */
 export function finalistColor(c: Candidate, i: number): string {
+  // Identidade estável primeiro (número da urna); nome como fallback (M2).
+  const num = String(c.numero ?? '');
+  if (num === '13') return LULA_RED;
+  if (num === '22') return JAIR_BLUE;
   const name = `${c.nomeUrna || ''} ${c.nomeFull || ''}`.toUpperCase();
   if (name.includes('LULA')) return LULA_RED;
   if (name.includes('JAIR') || name.includes('BOLSONARO')) return JAIR_BLUE;
@@ -65,11 +79,7 @@ export function isComplete(parsed: ParsedRace | null | undefined): boolean {  co
  */
 export function hasRealCount(w: UFWinner | null | undefined): boolean {
   if (!w) return false;
-  const pst =
-    typeof w.pst === 'number'
-      ? w.pst
-      : parseFloat(String(w.pst ?? '0').replace(/\./g, '').replace(',', '.')) || 0;
-  return pst > 0 || (w.vap ?? 0) > 0;
+  return parseBrPct(w.pst) > 0 || (w.vap ?? 0) > 0;
 }
 
 /**

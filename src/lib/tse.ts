@@ -326,7 +326,7 @@ export function parseRace(race: RaceInput, raw: TseRawPayload): ParsedRace {
           partidoNum: pn,
           vap: toInt(c.vap),
           pvap: c.pvap || '0,00', // string pt-BR (oficial TSE)
-          pvapNum: parseFloat(String(c.pvapn || c.pvap || '0').replace(',', '.')) || 0,
+          pvapNum: parseFloat(String(c.pvapn ?? c.pvap ?? '0').replace(',', '.')) || 0,
           seq: c.seq ?? undefined,
           foto: fotoUrl(race, c.sqcand ?? ''),
         })

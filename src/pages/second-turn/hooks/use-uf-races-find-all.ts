@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
-import { UFS, fetchRaceJson, parseRace } from '@/lib/tse.js';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { parseBrPct } from '@/helpers/election.js';
+import { UFS, fetchRaceJson, parseRace, parseBrInt } from '@/lib/tse.js';
 import type { Candidate } from '@/lib/tse.js';
 import { RACE_PRES } from '@/lib/second-turn.js';
 import type { UFWinner, UFMeta } from '@/lib/second-turn.js';
@@ -26,7 +27,14 @@ export const useUfRacesFindAll = (topNumeros: string[], enabled: boolean) => {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Geração do passe: varreduras sobrepostas (StrictMode, intervalo de 60s,
+  // topKey novo) resolvem por último-vencedor — só a geração atual commita (M3).
+  const genRef = useRef(0);
+
   const fetchUFs = useCallback(async (nums: string[]): Promise<void> => {
+    const gen = genRef.current + 1;
+    genRef.current = gen;
+    const alive = (): boolean => gen === genRef.current;
     // Colore cada UF pelo vencedor entre os 2 finalistas (ou líder local se 2T ainda sem ele próprio)
     try {
       const out: Record<string, UFWinner> = {};
@@ -58,9 +66,11 @@ export const useUfRacesFindAll = (topNumeros: string[], enabled: boolean) => {
                 };
               // Derivação p/ o preditor (TF.js): apuração, válidos, eleitorado e top-2 local.
               stats[uf] = {
-                pst: parseFloat(String(parsed.meta?.s?.pst ?? '0').replace(',', '.')) || 0,
+                pst: parseBrPct(parsed.meta?.s?.pst),
                 validos: parsed.meta?.validos ?? 0,
-                eleitorado: Number(parsed.meta?.e?.te ?? 0) || 0,
+                // parseBrInt, não Number(): "16.372.372" daria NaN e zerava o
+                // peso da UF na agregação bottom-up (M8).
+                eleitorado: parseBrInt(parsed.meta?.e?.te ?? 0),
                 top: cands.slice(0, 2).map((c) => ({ numero: String(c.numero), pvapNum: c.pvapNum })),
               };
             } catch {
@@ -69,8 +79,10 @@ export const useUfRacesFindAll = (topNumeros: string[], enabled: boolean) => {
           }),
         );
         const done = Math.min(i + 4, UFS.length);
+        if (!alive()) return;
         setUfMeta({ done, total: UFS.length, at: null });
       }
+      if (!alive()) return;
       setUfWinners(out);
       setUfStats(stats);
       setUfMeta({ done: UFS.length, total: UFS.length, at: new Date().toLocaleTimeString('pt-BR') });

@@ -15,6 +15,10 @@ const ONLINE_EPOCHS = 5;
 /** Final nacional bottom-up dos baselines (p/ alvo das séries nacionais). */
 let cached: tfTypes.LayersModel | null = null;
 let pretrained = false;
+/** Checkpoints de regimes antigos (v1/v2) — órfãos que só gastam quota (N10). */
+let orphansCleaned = false;
+/** Fila de treino: fitDataset concorrentes no mesmo singleton se corrompem (N3). */
+let trainChain: Promise<void> = Promise.resolve();
 /** De onde vieram os pesos: 'indexeddb' | 'checkpoint' | 'pre-treino-1T'. */
 let provenance = 'novo';
 
@@ -48,6 +52,18 @@ function nationalFinalOf(
  */
 export async function ensurePretrainedModel(tf: TfModule): Promise<tfTypes.LayersModel> {
   if (cached) return cached;
+  if (!orphansCleaned) {
+    orphansCleaned = true;
+    void (async (): Promise<void> => {
+      for (const url of ['indexeddb://election-predictor-v1', 'indexeddb://election-predictor-v2']) {
+        try {
+          await tf.io.removeModel(url);
+        } catch {
+          // Ausente ou IDB bloqueado — segue.
+        }
+      }
+    })();
+  }
   try {
     cached = await tf.loadLayersModel(IDB_URL);
     pretrained = true;
@@ -73,7 +89,9 @@ export async function ensurePretrainedModel(tf: TfModule): Promise<tfTypes.Layer
     fetchFirstTurnBaselines().catch(() => null),
   ]);
   let rows: TrainRow[] = [];
-  if (series) {
+  // Sem finais não há alvo transferido: série sem alvo colapsaria p/ alvo
+  // constante (N2). Cai no fallback de finais — que também exige baselines.
+  if (series && (baselines ?? []).length > 0) {
     const finalsByUf = new Map((baselines ?? []).map((b) => [b.uf.toLowerCase(), b]));
     const nat = nationalFinalOf(baselines);
     rows = seriesPretrainRows(series.national, series.byUf, (uf) =>
@@ -105,7 +123,7 @@ export async function fineTuneModel(tf: TfModule, model: tfTypes.LayersModel, ro
   await saveQuietly(model);
 }
 
-async function fitRows(tf: TfModule, model: tfTypes.LayersModel, rows: TrainRow[], epochs: number): Promise<void> {
+async function fitRowsInner(tf: TfModule, model: tfTypes.LayersModel, rows: TrainRow[], epochs: number): Promise<void> {
   const ds = toDataset(tf, rows, Math.min(32, rows.length));
   await model.fitDataset(ds, {
     epochs,
@@ -118,6 +136,14 @@ async function fitRows(tf: TfModule, model: tfTypes.LayersModel, rows: TrainRow[
       },
     },
   });
+}
+
+// Fits concorrentes no mesmo singleton se corromperiam (N3): serializa numa
+// cadeia — o segundo espera o primeiro em vez de intercalar pesos.
+async function fitRows(tf: TfModule, model: tfTypes.LayersModel, rows: TrainRow[], epochs: number): Promise<void> {
+  const run = trainChain.then(() => fitRowsInner(tf, model, rows, epochs));
+  trainChain = run.catch(() => {});
+  await run;
 }
 
 /** Salva no IndexedDB; falha (quota/modo privado) nunca quebra a apuração. */

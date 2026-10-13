@@ -54,5 +54,6 @@ a { color: inherit; }
   .page-scroll .st-grid { flex: none; min-height: calc(100vh - 70px); }
   .page-scroll .st-card { min-height: calc(100vh - 86px); }
   .page-scroll .st-svg { max-height: none; }
-  .page-scroll .st-full { min-height: calc(100vh - 60px); }
+  /* Terceiro card no tamanho do conteúdo (o min-height de 100vh deixava
+     um vazio enorme abaixo do gráfico). */
 }

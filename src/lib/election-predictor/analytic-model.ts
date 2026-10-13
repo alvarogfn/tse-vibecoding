@@ -99,7 +99,9 @@ export function buildAnalyticModel(tf: TfModule): tfTypes.LayersModel {
         kernelVals[i] = (r * 2 - 1) * limit;
       }
       const kernel = tf.tensor2d(kernelVals, [fanIn, fanOut]);
-      const bias = tf.zeros([fanOut]);
+      // Viés positivo pequeno: metade dos ReLUs nasceria morta com bias zero
+      // e o pré-treino não convergia (saídas chapadas ⇒ mapa todo azul).
+      const bias = tf.fill([fanOut], 0.1);
       garbage.push(kernel, bias);
       const layer = model.layers[li];
       if (!layer) throwMissingLayer(li);
@@ -118,7 +120,9 @@ export function buildAnalyticModel(tf: TfModule): tfTypes.LayersModel {
     for (const t of garbage) t.dispose();
   }
 
-  model.compile({ optimizer: tf.train.adam(), loss: 'meanSquaredError' });
+  // lr 0.01 (não o 0.001 padrão): o pré-treino tem poucas epochs p/
+  // separar as UFs (metas 35–68); com 0.001 os pesos quase não saíam do lugar.
+  model.compile({ optimizer: tf.train.adam(0.01), loss: 'meanSquaredError' });
   return model;
 }
 

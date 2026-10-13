@@ -231,7 +231,7 @@ export function PredictorCard(): React.JSX.Element {
   );
 
   const ariaLabel = useMemo<string>(() => {
-    if (snapshot.status !== 'ready' || snapshot.series.length === 0) {
+    if ((snapshot.status !== 'ready' && snapshot.status !== 'loading') || snapshot.series.length === 0) {
       return `Previsão do 2º turno: ${snapshot.status}. Gráfico indisponível.`;
     }
     const race = nationalsText(snapshot.series);
@@ -262,7 +262,9 @@ export function PredictorCard(): React.JSX.Element {
     );
   }
 
-  if (snapshot.status === 'loading') {
+  // Só some com o gráfico se não há série anterior; no recálculo o chart
+  // segue montado (memos seguram as refs) e só o texto indica a fase.
+  if (snapshot.status === 'loading' && snapshot.series.length === 0) {
     return (
       <>
         <PredictorTitle busy={busy} />
@@ -290,15 +292,18 @@ export function PredictorCard(): React.JSX.Element {
     );
   }
 
-  // status === 'ready'
+  // status === 'ready' (ou 'loading' com séries: recalculando sem desmontar)
   const at = snapshot.updatedAt ? new Date(snapshot.updatedAt).toLocaleTimeString('pt-BR') : '—';
   const race = nationalsText(snapshot.series);
+  const recalculating = snapshot.status === 'loading';
 
   return (
     <>
       <PredictorTitle busy={busy} />
       <div className="summary" title="Curvas por UF e Brasil">
-        {race ?? 'Projeção por UF e Brasil'} · eixo x = % apuração · eixo y = % de votos
+        {recalculating
+          ? `Recalculando projeção${snapshot.phase ? ` · ${snapshot.phase}` : '…'}`
+          : `${race ?? 'Projeção por UF e Brasil'} · eixo x = % apuração · eixo y = % de votos`}
       </div>
       {datasets.length ? (
         <>
@@ -332,7 +337,10 @@ export function PredictorCard(): React.JSX.Element {
           Sem séries para projetar.
         </div>
       )}
-      <div className="hint">Atualizado às {at} · linha sólida = apurado · tracejada = projeção</div>
+      <div className="hint">
+        Atualizado às {at} · linha sólida = apurado · tracejada = projeção{snapshot.note ? ` · base ${snapshot.note}` : ''}
+        {recalculating && snapshot.phase ? ` · ${snapshot.phase}` : ''}
+      </div>
     </>
   );
 }

@@ -6,13 +6,22 @@ import type { FirstTurnBaseline } from '@/lib/election-predictor/baselines.js';
 import { pretrainRows, seriesPretrainRows, toDataset } from '@/lib/election-predictor/dataset.js';
 import type { TrainRow } from '@/lib/election-predictor/dataset.js';
 
-const IDB_URL = 'indexeddb://election-predictor-v1';
+const IDB_URL = 'indexeddb://election-predictor-v3';
+// v2 aposentada junto com a v1: regime de treino mudou (bias 0.1 anti-ReLU
+// morta + lr 0.01 p/ convergir); checkpoints antigos previam ~48 p/ tudo.
 const PRETRAIN_EPOCHS = 25;
 const ONLINE_EPOCHS = 5;
 
 /** Final nacional bottom-up dos baselines (p/ alvo das séries nacionais). */
 let cached: tfTypes.LayersModel | null = null;
 let pretrained = false;
+/** De onde vieram os pesos: 'indexeddb' | 'checkpoint' | 'pre-treino-1T'. */
+let provenance = 'novo';
+
+/** Origem dos pesos em uso (p/ diagnóstico visível no card). */
+export function modelProvenance(): string {
+  return provenance;
+}
 function nationalFinalOf(
   baselines: FirstTurnBaseline[] | null,
 ): { lula1T: number | null; eliminated: number | null } {
@@ -42,6 +51,7 @@ export async function ensurePretrainedModel(tf: TfModule): Promise<tfTypes.Layer
   try {
     cached = await tf.loadLayersModel(IDB_URL);
     pretrained = true;
+    provenance = 'indexeddb';
     return cached;
   } catch {
     // sem modelo salvo — segue p/ checkpoint ou priors + pré-treino.
@@ -49,6 +59,7 @@ export async function ensurePretrainedModel(tf: TfModule): Promise<tfTypes.Layer
   try {
     cached = await tf.loadLayersModel(`${import.meta.env.BASE_URL}models/predictor/model.json`);
     pretrained = true;
+    provenance = 'checkpoint';
     return cached;
   } catch {
     // sem checkpoint publicado — priors analíticos + pré-treino local.
@@ -82,6 +93,7 @@ export async function ensurePretrainedModel(tf: TfModule): Promise<tfTypes.Layer
   }
   await saveQuietly(model);
   pretrained = true;
+  provenance = 'pre-treino-1T';
   cached = model;
   return model;
 }

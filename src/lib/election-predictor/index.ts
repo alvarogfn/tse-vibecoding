@@ -23,6 +23,8 @@ import {
   BR_LULA_COLOR,
   BR_WIDTH,
   UF_DEFAULT_COLOR,
+  UF_PASTEL_BLUE,
+  UF_PASTEL_RED,
   UF_WIDTH,
   lightOf,
   pastelOf,
@@ -35,7 +37,7 @@ import {
   weightOf,
 } from '@/lib/election-predictor/features.js';
 import type { TfModule } from '@/lib/election-predictor/analytic-model.js';
-import { ensurePretrainedModel, fineTuneModel, resetSavedModel } from '@/lib/election-predictor/training.js';
+import { ensurePretrainedModel, fineTuneModel, resetSavedModel, modelProvenance } from '@/lib/election-predictor/training.js';
 import { fetchFirstTurnBaselines } from '@/lib/election-predictor/baselines.js';
 import type { FirstTurnBaseline } from '@/lib/election-predictor/baselines.js';
 import { onlineRows } from '@/lib/election-predictor/dataset.js';
@@ -67,6 +69,10 @@ export interface PredictorSnapshot {
   series: PredictorSeries[];
   updatedAt: number | null;
   error: string | null;
+  /** Diagnóstico: base 1T usada + origem dos pesos (ex. '1T:27UFs · pre-treino-1T'). */
+  note: string | null;
+  /** Etapa atual do passe ('baixando TensorFlow.js…', …) — null fora de loading. */
+  phase: string | null;
 }
 
 export interface PredictorUfInput {
@@ -96,6 +102,8 @@ const INITIAL_SNAPSHOT: PredictorSnapshot = {
   series: [],
   updatedAt: null,
   error: null,
+  note: null,
+  phase: null,
 };
 
 let current: PredictorSnapshot = INITIAL_SNAPSHOT;
@@ -204,7 +212,11 @@ function curvePoints(counted: number, ys: number[]): PredictorPoint[] {
 
 /** Série de UF com projeção em 1000 fatias (flutuações do modelo, não reta). */
 function ufSeriesFromCurve(p: PreparedUf, ys: number[]): PredictorSeries {
-  const color = pastelOf(p.input.color ?? UF_DEFAULT_COLOR);
+  // Cor pelo VENCEDOR PROJETADO (final da curva), nunca pelo vencedor aparente
+  // da varredura: com poucas urnas apuradas o sweep empata no 0×0 e elegeria
+  // sempre o 1º da lista (mapa/gráfico todo azul). Rosa = Lula ≥ 50 no fim.
+  const last = ys.length > 0 ? ys[ys.length - 1] : null;
+  const color = last == null ? pastelOf(p.input.color ?? UF_DEFAULT_COLOR) : last >= 50 ? UF_PASTEL_RED : UF_PASTEL_BLUE;
   const start = p.share != null ? clampPct(p.share) : clampPct(p.anchor);
   return {
     id: `uf-${p.input.uf.toLowerCase()}`,
@@ -292,10 +304,24 @@ function isValidPoint(p: unknown): p is { counted: number; share: number | null 
 }
 
 async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<void> {
+  // Fase visível no card (o gráfico segue montado; só o texto muda).
+  const setPhase = (phase: string | null): void => {
+    if (myRun !== runId) return;
+    setSnapshot({
+      status: 'loading',
+      series: current.series,
+      updatedAt: current.updatedAt,
+      error: null,
+      note: current.note,
+      phase,
+    });
+  };
   try {
+    setPhase('baixando TensorFlow.js…');
     const tf: TfModule = await import('@tensorflow/tfjs');
     await tf.ready();
     // Pré-treino 1T (uma vez; depois IndexedDB) + modelo pronto.
+    setPhase('treinando modelo…');
     const model = await ensurePretrainedModel(tf);
     if (myRun !== runId) return;
     const baselines = await fetchFirstTurnBaselines().catch(() => null);
@@ -308,7 +334,7 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
       prepareUf(u, baseByUf.get(u.uf.toLowerCase())),
     );
     if (prepared.length === 0) {
-      if (myRun === runId) setSnapshot({ status: 'idle', series: [], updatedAt: null, error: null });
+      if (myRun === runId) setSnapshot({ status: 'idle', series: [], updatedAt: null, error: null, note: null, phase: null });
       return;
     }
     // Stale runs must not touch training history: a newer push may have
@@ -352,6 +378,7 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
 
     // Rollout: o modelo prevê cada uma das 1000 fatias do % restante por UF;
     // a nacional é o bottom-up por fatia (flutua junto, sem falácia ecológica).
+    setPhase('projetando 1000 fatias…');
     const { curves, nationalLula, nationalFlavio } =
       (await rollout(
         tf,
@@ -400,7 +427,14 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
       ),
     ];
 
-    setSnapshot({ status: 'ready', series, updatedAt: Date.now(), error: null });
+    setSnapshot({
+      status: 'ready',
+      series,
+      updatedAt: Date.now(),
+      error: null,
+      note: `1T:${baseByUf.size}UFs · ${modelProvenance()}`,
+      phase: null,
+    });
   } catch (err) {
     if (myRun !== runId) return; // superseded — stay silent.
     // Retryable: forget the failed inputs key so the next identical poll
@@ -411,6 +445,8 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
       status: 'error',
       series: current.series,
       updatedAt: current.updatedAt,
+      note: current.note,
+      phase: null,
       error: toErrorMessage(err),
     });
   }
@@ -429,7 +465,7 @@ export function pushPredictorInputs(inputs: PredictorInputs): void {
     // Empty-data state: nothing to predict — idle with no series.
     runId += 1; // invalidate any in-flight recompute.
     lastInputsKey = null;
-    setSnapshot({ status: 'idle', series: [], updatedAt: null, error: null });
+    setSnapshot({ status: 'idle', series: [], updatedAt: null, error: null, note: null, phase: null });
     return;
   }
   const sanitized: SanitizedInputs = {
@@ -447,7 +483,7 @@ export function pushPredictorInputs(inputs: PredictorInputs): void {
   const myRun = runId + 1;
   runId = myRun;
   // Keep the previous series visible while the new pass computes.
-  setSnapshot({ status: 'loading', series: current.series, updatedAt: current.updatedAt, error: null });
+  setSnapshot({ status: 'loading', series: current.series, updatedAt: current.updatedAt, error: null, note: current.note, phase: 'iniciando…' });
   void recompute(sanitized, myRun);
 }
 
@@ -463,7 +499,7 @@ export function retrainPredictorFromScratch(): void {
   const myRun = runId + 1;
   runId = myRun;
   lastInputsKey = null;
-  setSnapshot({ status: 'loading', series: current.series, updatedAt: current.updatedAt, error: null });
+  setSnapshot({ status: 'loading', series: current.series, updatedAt: current.updatedAt, error: null, note: current.note, phase: 'reiniciando treino…' });
   void (async (): Promise<void> => {
     try {
       const tf: TfModule = await import('@tensorflow/tfjs');
@@ -479,6 +515,8 @@ export function retrainPredictorFromScratch(): void {
         status: 'error',
         series: current.series,
         updatedAt: current.updatedAt,
+        note: current.note,
+        phase: null,
         error: err instanceof Error && err.message.trim() ? err.message : 'Falha ao retreinar do zero.',
       });
     }

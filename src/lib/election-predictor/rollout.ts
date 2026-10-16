@@ -9,9 +9,6 @@ export interface RolloutUf {
   counted: number;
   share: number | null;
   anchor: number;
-  baseline1T: number | null;
-  pollAvg: number | null;
-  ptBias: number | null;
   weight: number;
 }
 
@@ -29,6 +26,7 @@ export interface RolloutResult {
  * `await tf.nextFrame()` a cada 200 fatias cede a main thread (sem jank).
  * Flutuações emergem da resposta da rede ao counted-x e ao share evolutivo —
  * é o modelo prevendo a trajetória, não uma reta até a âncora.
+ * Sem 1T/pesquisas: baseline/poll/bias entram neutros (0.5) — só o 2T move.
  */
 export async function rollout(
   tf: TfModule,
@@ -50,9 +48,9 @@ export async function rollout(
       return buildFeatureVector({
         counted: x,
         share: s,
-        baseline1T: u.baseline1T,
-        pollAvg: u.pollAvg,
-        ptBias: u.ptBias,
+        baseline1T: null,
+        pollAvg: null,
+        ptBias: null,
         anchor: u.anchor,
       });
     });

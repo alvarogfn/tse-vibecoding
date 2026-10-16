@@ -1,12 +1,12 @@
 /**
  * election-predictor — real-time electoral projection (TensorFlow.js, client-side).
  *
- * Pipeline (per repo doc `previsao-eleitoral-com-tensorflow-js.md`):
- *  1. Per-UF dense feedforward inference (6 normalized features → sigmoid).
- *  2. Residual-delta-swing vs the structural anchor + stabilization blend
+ * Pipeline 100% 2T (sem 1T, sem pesquisas):
+ *  1. Per-UF dense feedforward (6 normalized features → sigmoid).
+ *  2. Residual-delta-swing vs structural anchor + stabilization blend
  *     `alpha = min(1, counted/60)` toward the anchor
- *     (anchor = 1T transferido (Datafolha 46/32) ?? poll ?? current ?? 50 — mesma
- *     definição no treino e na inferência).
+ *     (anchor = share 2T observado ?? 50 — mesma definição no treino e na
+ *     inferência).
  *  3. Bottom-up national aggregation: Σ(uf_pred × weight)/Σweight with
  *     weight = eleitorado || validos; Flávio national = 100 − Lula national.
  *
@@ -17,6 +17,8 @@
  *   the previous series (if any) and only flip status/error.
  * - tfjs is lazy-loaded (`await import('@tensorflow/tfjs')` + `tf.ready()`)
  *   so the initial bundle stays lean; every tensor op lives in `tf.tidy()`.
+ * - O modelo nasce dos priors analíticos (sem treino) e só aprende com os
+ *   snapshots 2T da apuração (fine-tune online).
  */
 import { useSyncExternalStore } from 'react';
 import {
@@ -30,21 +32,12 @@ import {
   lightOf,
   pastelOf,
 } from '@/lib/election-predictor/colors.js';
-import {
-  clampCounted,
-  clampPct,
-  cleanShare,
-  resolveAnchor,
-  weightOf,
-} from '@/lib/election-predictor/features.js';
+import { clampCounted, clampPct, cleanShare, resolveAnchor, weightOf } from '@/lib/election-predictor/features.js';
 import type { TfModule } from '@/lib/election-predictor/analytic-model.js';
-import { ensurePretrainedModel, fineTuneModel, resetSavedModel, modelProvenance } from '@/lib/election-predictor/training.js';
-import { fetchFirstTurnBaselines } from '@/lib/election-predictor/baselines.js';
-import type { FirstTurnBaseline } from '@/lib/election-predictor/baselines.js';
+import { ensureModel, fineTuneModel, resetSavedModel, modelProvenance } from '@/lib/election-predictor/training.js';
 import { onlineRows } from '@/lib/election-predictor/dataset.js';
 import { loadSnapshotSeries, saveSnapshotSeries } from '@/lib/election-predictor/snapshots.js';
 import { rollout, ROLLOUT_SLICES } from '@/lib/election-predictor/rollout.js';
-import { POLL_VALID_LULA, transferLulaPrior } from '@/lib/election-predictor/transfer.js';
 
 export interface PredictorPoint {
   x: number;
@@ -70,7 +63,7 @@ export interface PredictorSnapshot {
   series: PredictorSeries[];
   updatedAt: number | null;
   error: string | null;
-  /** Diagnóstico: base 1T usada + origem dos pesos (ex. '1T:27UFs · pre-treino-1T'). */
+  /** Diagnóstico: origem dos pesos (ex. 'analitico', 'indexeddb'). */
   note: string | null;
   /** Etapa atual do passe ('baixando TensorFlow.js…', …) — null fora de loading. */
   phase: string | null;
@@ -83,9 +76,6 @@ export interface PredictorUfInput {
   validos: number;
   eleitorado: number;
   color?: string;
-  baseline1T?: number | null;
-  pollAvg?: number | null;
-  ptBias?: number | null;
 }
 
 export interface PredictorInputs {
@@ -152,35 +142,23 @@ interface PreparedUf {
   anchor: number;
   weight: number;
   share: number | null;
-  baseline1T: number | null;
-  pollAvg: number | null;
-  ptBias: number | null;
 }
 
-function prepareUf(input: PredictorUfInput, base: FirstTurnBaseline | undefined): PreparedUf {
+function prepareUf(input: PredictorUfInput): PreparedUf {
   const counted = clampCounted(input.counted);
   const rawShare = cleanShare(input.lulaShare);
   // 0 votos com 0% apurado = ausência de evidência, NÃO 0% de apoio.
   // Sem esse guarda a âncora colapsava a 0 e o gráfico cravava 100×0.
   const share = rawShare === 0 && counted <= 0 ? null : rawShare;
-  const baseline1T = input.baseline1T ?? base?.lula1T ?? null;
-  const pollAvg = input.pollAvg ?? POLL_VALID_LULA;
-  // Âncora única treino/inferência (N5): 1T transferido (N5). Sem baseline,
-  // cai no poll/share como antes — nunca diverge do alvo do fine-tune.
-  const transferred = baseline1T != null ? transferLulaPrior(baseline1T, base?.eliminated ?? null) : null;
-  const anchor = transferred ?? resolveAnchor(baseline1T, pollAvg, share);
-  // Viés pró-Lula/PT estrutural: sem dataset multieleição, o próprio 1T da UF
-  // é o proxy (UF com Lula alto no 1T = reduto pró-PT) — entra na feature 5.
-  const ptBias = input.ptBias ?? (base?.lula1T != null ? base.lula1T / 100 : null);
+  // Âncora 100% 2T: share observado ?? 50 (neutro). Mesma definição no
+  // treino (dataset.onlineRows) e na inferência — nunca diverge.
+  const anchor = resolveAnchor(null, null, share);
   return {
     input,
     counted,
-    anchor: resolveAnchor(baseline1T, pollAvg, share),
+    anchor,
     weight: weightOf(input.eleitorado, input.validos),
     share,
-    baseline1T,
-    pollAvg,
-    ptBias,
   };
 }
 
@@ -281,21 +259,8 @@ interface SanitizedInputs {
  * cycle with the same values — comparing keys avoids recompute + notify, so
  * `useSyncExternalStore` subscribers (and the chart memos) never fire.
  */
-/** Revisão dos baselines 1T — busts o dedup quando as âncoras mudam (N6). */
-let lastBaselinesCount = -1;
-
 function inputsKey(sanitized: SanitizedInputs): string {
-  const ufs = sanitized.ufs.map((u) => [
-    u.uf,
-    u.counted,
-    u.lulaShare,
-    u.validos,
-    u.eleitorado,
-    u.color ?? '',
-    u.baseline1T ?? '',
-    u.pollAvg ?? '',
-    u.ptBias ?? '',
-  ]);
+  const ufs = sanitized.ufs.map((u) => [u.uf, u.counted, u.lulaShare, u.validos, u.eleitorado, u.color ?? '']);
   return JSON.stringify({ u: ufs, c: sanitized.nationalCounted, s: sanitized.nationalShare });
 }
 
@@ -329,25 +294,14 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
     setPhase('baixando TensorFlow.js…');
     const tf: TfModule = await import('@tensorflow/tfjs');
     await tf.ready();
-    // Pré-treino 1T (uma vez; depois IndexedDB) + modelo pronto.
+    // Modelo analítico (uma vez; depois IndexedDB) + fine-tune só com 2T.
     setPhase('treinando modelo…');
-    const model = await ensurePretrainedModel(tf);
+    const model = await ensureModel(tf);
     if (myRun !== runId) return;
-    const baselines = await fetchFirstTurnBaselines().catch(() => null);
-    if (myRun !== runId) return;
-    const baseByUf = new Map((baselines ?? []).map((b) => [b.uf.toLowerCase(), b]));
-    // Baselines chegaram depois (ou sumiram): invalida o dedup p/ recalcular
-    // âncoras — senão a âncora fica p/ sempre no fallback do 1º passe (N6).
-    if (baseByUf.size !== lastBaselinesCount) {
-      lastBaselinesCount = baseByUf.size;
-      lastInputsKey = null;
-    }
 
     // Sequential Fail-Fast pass: first throw aborts this run; the catch
     // below converts it to the `error` snapshot (stale runs stay silent).
-    const prepared: PreparedUf[] = sanitized.ufs.map((u) =>
-      prepareUf(u, baseByUf.get(u.uf.toLowerCase())),
-    );
+    const prepared: PreparedUf[] = sanitized.ufs.map((u) => prepareUf(u));
     if (prepared.length === 0) {
       if (myRun === runId) setSnapshot({ status: 'idle', series: [], updatedAt: null, error: null, note: null, phase: null });
       return;
@@ -357,9 +311,10 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
     if (myRun !== runId) return;
 
     // Acumula a série 2T da sessão (só muda quando counted/share mudam) e
-    // refina os pesos com (pré-treino 1T implícito nos pesos + snapshots 2T).
-    // No primeiro recompute, restaura antes as séries salvas no IndexedDB
-    // (padrão da página do 1º turno): reiniciar a página não zera o treino.
+    // refina os pesos com os snapshots 2T. Sem share (0% apurado) não há
+    // linha de treino — o modelo segue analítico até a apuração começar.
+    // No primeiro recompute, restaura antes as séries salvas no IndexedDB:
+    // reiniciar a página não zera o treino.
     if (!snapshotsRestored) {
       snapshotsRestored = true;
       const persisted = await loadSnapshotSeries().catch(
@@ -389,7 +344,7 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
     }
     // await (não void): garante last-write-wins na ordem dos runs (N12).
     if (seriesChanged) await saveSnapshotSeries(Object.fromEntries(sessionSeries));
-    await fineTuneModel(tf, model, onlineRows(sessionSeries, baseByUf));
+    await fineTuneModel(tf, model, onlineRows(sessionSeries));
     if (myRun !== runId) return;
 
     // Rollout: o modelo prevê cada uma das 1000 fatias do % restante por UF;
@@ -403,9 +358,6 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
           counted: p.counted,
           share: p.share,
           anchor: p.anchor,
-          baseline1T: p.baseline1T,
-          pollAvg: p.pollAvg,
-          ptBias: p.ptBias,
           weight: p.weight,
         })),
         ROLLOUT_SLICES,
@@ -448,7 +400,7 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
       series,
       updatedAt: Date.now(),
       error: null,
-      note: `1T:${baseByUf.size}UFs · ${modelProvenance()}`,
+      note: `2T:${prepared.length}UFs · ${modelProvenance()}`,
       phase: null,
     });
   } catch (err) {
@@ -508,8 +460,9 @@ export function useElectionPredictor(): PredictorSnapshot {
 }
 
 /**
- * Apaga o modelo salvo e retreina DO ZERO com os dados atuais (1T ponderado
- * + snapshots 2T já apurados, mantidos). O próximo push continua incremental.
+ * Apaga o modelo salvo e retreina DO ZERO com os snapshots 2T já apurados
+ * (mantidos). Sem 2T apurado, volta aos priors analíticos. O próximo push
+ * continua incremental.
  */
 export function retrainPredictorFromScratch(): void {
   const myRun = runId + 1;

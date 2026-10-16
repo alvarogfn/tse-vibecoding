@@ -5,9 +5,9 @@
  * dense feedforward 6 features → ReLU hidden layers (16 → 12 → 8) →
  * 1 sigmoid neuron predicting the final Lula share (0–1, ×100 for display).
  * Compiled with Adam + MSE at build time, matching the doc's prescription.
- * Training happens in `training.ts` (pre-train on 1T finals + online
- * fine-tune on session snapshots via `tf.data.Dataset`, checkpoint saved
- * to IndexedDB); this module owns topology + weight priors + inference.
+ * Training happens in `training.ts` (fine-tune online on 2T session snapshots
+ * via `tf.data.Dataset`, checkpoint saved to IndexedDB); this module owns
+ * topology + weight priors + inference.
  *
  * ── WEIGHTS: ANALYTIC PRIORS, NOT TRAINED WEIGHTS ──────────────────────
  * No trained checkpoint is published yet (`public/models/predictor/`

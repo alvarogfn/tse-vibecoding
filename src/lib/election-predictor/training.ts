@@ -1,61 +1,43 @@
 import type * as tfTypes from '@tensorflow/tfjs';
 import type { TfModule } from '@/lib/election-predictor/analytic-model.js';
 import { buildAnalyticModel } from '@/lib/election-predictor/analytic-model.js';
-import { fetchFirstTurnBaselines, fetchFirstTurnSeries } from '@/lib/election-predictor/baselines.js';
-import type { FirstTurnBaseline } from '@/lib/election-predictor/baselines.js';
-import { pretrainRows, seriesPretrainRows, toDataset } from '@/lib/election-predictor/dataset.js';
+import { toDataset } from '@/lib/election-predictor/dataset.js';
 import type { TrainRow } from '@/lib/election-predictor/dataset.js';
 
-const IDB_URL = 'indexeddb://election-predictor-v3';
-// v2 aposentada junto com a v1: regime de treino mudou (bias 0.1 anti-ReLU
-// morta + lr 0.01 p/ convergir); checkpoints antigos previam ~48 p/ tudo.
-const PRETRAIN_EPOCHS = 25;
+// v4: pivô p/ 100% 2T — invalida os pesos pré-treinados no 1T (v3 e
+// anteriores). O modelo nasce dos priors analíticos e só aprende com os
+// snapshots 2T da apuração.
+const IDB_URL = 'indexeddb://election-predictor-v4';
 const ONLINE_EPOCHS = 5;
 
-/** Final nacional bottom-up dos baselines (p/ alvo das séries nacionais). */
 let cached: tfTypes.LayersModel | null = null;
-let pretrained = false;
-/** Checkpoints de regimes antigos (v1/v2) — órfãos que só gastam quota (N10). */
+/** Checkpoints de regimes antigos (v1–v3) — órfãos que só gastam quota (N10). */
 let orphansCleaned = false;
 /** Fila de treino: fitDataset concorrentes no mesmo singleton se corrompem (N3). */
 let trainChain: Promise<void> = Promise.resolve();
-/** De onde vieram os pesos: 'indexeddb' | 'checkpoint' | 'pre-treino-1T'. */
+/** De onde vieram os pesos: 'indexeddb' | 'checkpoint' | 'analitico'. */
 let provenance = 'novo';
 
 /** Origem dos pesos em uso (p/ diagnóstico visível no card). */
 export function modelProvenance(): string {
   return provenance;
 }
-function nationalFinalOf(
-  baselines: FirstTurnBaseline[] | null,
-): { lula1T: number | null; eliminated: number | null } {
-  if (!baselines || baselines.length === 0) return { lula1T: null, eliminated: null };
-  let tw = 0;
-  let sl = 0;
-  let sf = 0;
-  for (const b of baselines) {
-    const w = b.validos > 0 ? b.validos : 0;
-    if (b.lula1T == null || b.flavio1T == null || w <= 0) continue;
-    tw += w;
-    sl += b.lula1T * w;
-    sf += b.flavio1T * w;
-  }
-  if (tw <= 0) return { lula1T: null, eliminated: null };
-  const lula1T = sl / tw;
-  return { lula1T, eliminated: Math.max(0, 100 - lula1T - sf / tw) };
-}
 
 /**
- * Modelo pronto: tenta IndexedDB (fit anterior) → checkpoint estático →
- * priors analíticos + PRÉ-TREINO nos finais 1T transferidos (salva no IDB).
+ * Modelo pronto: tenta IndexedDB (fit 2T anterior) → checkpoint estático →
+ * priors analíticos (sem treino; salva no IDB p/ o fine-tune retomar).
  * Chamadas seguintes retornam o singleton (treino incremental via fineTune).
  */
-export async function ensurePretrainedModel(tf: TfModule): Promise<tfTypes.LayersModel> {
+export async function ensureModel(tf: TfModule): Promise<tfTypes.LayersModel> {
   if (cached) return cached;
   if (!orphansCleaned) {
     orphansCleaned = true;
     void (async (): Promise<void> => {
-      for (const url of ['indexeddb://election-predictor-v1', 'indexeddb://election-predictor-v2']) {
+      for (const url of [
+        'indexeddb://election-predictor-v1',
+        'indexeddb://election-predictor-v2',
+        'indexeddb://election-predictor-v3',
+      ]) {
         try {
           await tf.io.removeModel(url);
         } catch {
@@ -66,55 +48,27 @@ export async function ensurePretrainedModel(tf: TfModule): Promise<tfTypes.Layer
   }
   try {
     cached = await tf.loadLayersModel(IDB_URL);
-    pretrained = true;
     provenance = 'indexeddb';
     return cached;
   } catch {
-    // sem modelo salvo — segue p/ checkpoint ou priors + pré-treino.
+    // sem modelo salvo — segue p/ checkpoint ou priors analíticos.
   }
   try {
     cached = await tf.loadLayersModel(`${import.meta.env.BASE_URL}models/predictor/model.json`);
-    pretrained = true;
     provenance = 'checkpoint';
     return cached;
   } catch {
-    // sem checkpoint publicado — priors analíticos + pré-treino local.
+    // sem checkpoint publicado — priors analíticos, sem treino.
   }
   const model = buildAnalyticModel(tf);
-  // Pré-treino nas SÉRIES temporais do 1T (1-turn-data/): o modelo vê a
-  // dinâmica por tempo de cada UF + nacional, com alvo = final transferido
-  // (pesquisas ponderadas). Fallback: só os finais. Depois salva no IDB.
-  const [series, baselines] = await Promise.all([
-    fetchFirstTurnSeries().catch(() => null),
-    fetchFirstTurnBaselines().catch(() => null),
-  ]);
-  let rows: TrainRow[] = [];
-  // Sem finais não há alvo transferido: série sem alvo colapsaria p/ alvo
-  // constante (N2). Cai no fallback de finais — que também exige baselines.
-  if (series && (baselines ?? []).length > 0) {
-    const finalsByUf = new Map((baselines ?? []).map((b) => [b.uf.toLowerCase(), b]));
-    const nat = nationalFinalOf(baselines);
-    rows = seriesPretrainRows(series.national, series.byUf, (uf) =>
-      uf == null
-        ? nat
-        : {
-            lula1T: finalsByUf.get(uf)?.lula1T ?? null,
-            eliminated: finalsByUf.get(uf)?.eliminated ?? null,
-          },
-    );
-  }
-  if (rows.length === 0 && baselines && baselines.length > 0) {
-    rows = pretrainRows(baselines);
-  }
-  if (rows.length > 0) {
-    await fitRows(tf, model, rows, PRETRAIN_EPOCHS);
-  }
   await saveQuietly(model);
-  pretrained = true;
-  provenance = 'pre-treino-1T';
+  provenance = 'analitico';
   cached = model;
   return model;
 }
+
+/** Compat: nome antigo (pré-treino 1T removido) — delega p/ ensureModel. */
+export const ensurePretrainedModel = ensureModel;
 
 /** Fine-tune online (warm-start nos pesos atuais) + salva no IndexedDB. */
 export async function fineTuneModel(tf: TfModule, model: tfTypes.LayersModel, rows: TrainRow[]): Promise<void> {
@@ -130,7 +84,7 @@ async function fitRowsInner(tf: TfModule, model: tfTypes.LayersModel, rows: Trai
     verbose: 0,
     callbacks: {
       // Persiste a CADA epoch: reiniciando a página, o modelo recarregado do
-      // IndexedDB é sempre o mais recente treinado (nunca o pré-treino cru).
+      // IndexedDB é sempre o mais recente treinado.
       onEpochEnd: async () => {
         await saveQuietly(model);
       },
@@ -170,11 +124,6 @@ export async function resetSavedModel(tf: TfModule): Promise<void> {
     }
   }
   cached = null;
-  pretrained = false;
 }
 
-export type { FirstTurnBaseline };
-export { PRETRAIN_EPOCHS, ONLINE_EPOCHS, IDB_URL };
-export function isPretrained(): boolean {
-  return pretrained;
-}
+export { ONLINE_EPOCHS, IDB_URL };

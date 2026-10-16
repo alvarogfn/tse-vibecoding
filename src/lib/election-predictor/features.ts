@@ -1,23 +1,21 @@
 /**
  * election-predictor/features — input sanitization + feature engineering.
  *
- * Feature table (per repo doc `previsao-eleitoral-com-tensorflow-js.md`,
- * "Estruturação do Tensor de Múltiplas Entradas"):
+ * Feature table (6 dims p/ preservar a topologia da rede; pivô 100% 2T):
  *
  * | # | Feature                    | Normalization | Source                          |
  * |---|----------------------------|---------------|---------------------------------|
  * | 0 | percentual_apuracao_atual  | counted / 100 | `counted` (0–100)               |
  * | 1 | proporcao_voto_atual       | share / 100   | `lulaShare`, null → anchor      |
- * | 2 | dinamica_tempo_1_turno     | / 100         | proxy: `baseline1T` (see below) |
- * | 3 | resultado_final_1_turno    | / 100         | `baseline1T`, null → 0.5        |
- * | 4 | media_agregada_pesquisas   | / 100         | `pollAvg`, null → 0.5           |
- * | 5 | viabilidade_historica_pt   | 0–1           | `ptBias`, null → 0.5 (neutral)  |
+ * | 2 | dinamica_tempo_1_turno     | / 100         | sempre neutro (legado 1T)       |
+ * | 3 | resultado_final_1_turno    | / 100         | sempre neutro (legado 1T)       |
+ * | 4 | media_agregada_pesquisas   | / 100         | sempre neutro (legado polls)     |
+ * | 5 | viabilidade_historica_pt   | 0–1           | sempre neutro (legado 1T)       |
  *
  * Notes:
- * - The public contract carries a single `baseline1T` field, while the doc
- *   distinguishes "1T dynamics at same %" from "1T final". Feature 2 therefore
- *   reuses `baseline1T` as a temporal proxy (documented approximation); when
- *   absent it falls back to the neutral 0.5 prior.
+ * - Pivô 100% 2T (weights/polls/1T removidos): chamadores passam null p/
+ *   baseline1T/pollAvg/ptBias e as features 2–5 caem no prior neutro 0.5.
+ *   Os slots são mantidos p/ não quebrar os pesos salvos (input dim = 6).
  * - Missing-data rule: null/NaN numeric inputs degrade to neutral priors
  *   (anchor for share, 0.5 for baseline/poll/bias) — never NaN, never throw.
  */
@@ -55,8 +53,9 @@ export function cleanShare(value: number | null | undefined): number | null {
 }
 
 /**
- * Structural anchor for stabilization: 1T final ?? poll ?? current ?? 50.
- * Fail-Safe by construction — always returns a finite 0–100 value.
+ * Structural anchor for stabilization: 100% 2T (share ?? 50).
+ * baseline1T/pollAvg mantidos na assinatura p/ compat, mas o pivô só usa
+ * o share observado — sem 1T, sem pesquisas. Fail-Safe por construção.
  */
 export function resolveAnchor(
   baseline1T: number | null | undefined,

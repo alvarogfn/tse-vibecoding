@@ -53,7 +53,7 @@ function PredictorTitle({ busy }: { busy: boolean }): React.JSX.Element {
         className="btn-ghost-sm"
         disabled={busy}
         aria-label="Retreinar modelo do zero"
-        title="Apaga o modelo salvo e retreina do zero (1T ponderado + 2T já apurado)"
+        title="Apaga o modelo salvo e retreina do zero (só 2T já apurado)"
         onClick={() => {
           if (confirm('Apagar o modelo salvo e retreinar do zero?')) retrainPredictorFromScratch();
         }}

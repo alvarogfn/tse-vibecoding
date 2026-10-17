@@ -19,3 +19,12 @@ export type RaceFindByIdResponse = TseRawPayload;
 export function buildRaceFile(scope: string, cargo: string, ele: string): string {
   return `${scope}-c${cargo}-e${ele.padStart(6, '0')}-u`;
 }
+
+/**
+ * Monta o nome do arquivo municipal TSE: `{uf}{codTse5}-c{cargo}-e{ele6}-u`
+ * (ex. 'mg41238-c0001-e006258-u' = Belo Horizonte no 2T; codTse5 com zeros à
+ * esquerda, padrão validado contra os arquivos do 1T em `dados/mg/`).
+ */
+export function buildMunRaceFile(uf: string, codTse5: string, cargo: string, ele: string): string {
+  return `${uf}${codTse5}-c${cargo}-e${ele.padStart(6, '0')}-u`;
+}

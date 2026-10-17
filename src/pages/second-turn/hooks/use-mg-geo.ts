@@ -30,7 +30,5 @@ export const useMgGeo = () => {
     loading,
     refetch,
     names: data?.names ?? {},
-    munMicro: data?.munMicro ?? {},
-    microNames: data?.microNames ?? {},
   };
 };

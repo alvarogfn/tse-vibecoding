@@ -35,8 +35,8 @@ export const USE_ROUND2_GEO = true;
 // Cores fixas da disputa presidencial: Flávio Bolsonaro = azul, Lula = vermelho
 export const JAIR_BLUE = '#2563eb';
 export const LULA_RED = '#dc2626';
-// Sem endpoints do 2º turno por microrregião: tudo em cinza claro
-export const MICRO_GRAY = '#d4d4d8';
+// Cinza de "sem dados do 2º turno" (município/UF sem apuração ainda).
+export const NO_DATA_GRAY = '#d4d4d8';
 
 export interface SvgPath {
   id: string;
@@ -59,8 +59,6 @@ export interface IbgeMunRaw {
 
 export interface MgGeo {
   names: Record<string, string>;
-  munMicro: Record<string, string>;
-  microNames: Record<string, string>;
 }
 
 export interface UFWinner {

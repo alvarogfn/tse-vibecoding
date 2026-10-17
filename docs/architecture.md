@@ -8,7 +8,7 @@
 - Rotas no modo declarativo (`BrowserRouter` + `Routes`/`Route` + `Navigate`). `basename` deriva de `import.meta.env.BASE_URL`. `postbuild` copia `dist/index.html` → `dist/404.html` (fallback do gh-pages estático).
 - Componentes são **apresentacionais**: recebem tudo por props, não fazem `fetch`, não parseiam, não conhecem URL.
   - Toda props tem `interface` exportada (`CandCardProps`, `MapCardProps`). Todo componente exportado anota `: React.JSX.Element`.
-  - Variação por composição (`children` em `MapCard`) e callbacks (`onClick`, `onPin`, `onHover`). Página passa handlers estáveis via `useCallback` (`handleMunHover`, `brFill`, `microFill`).
+  - Variação por composição (`children` em `MapCard`) e callbacks (`onClick`, `onPin`, `onHover`). Página passa handlers estáveis via `useCallback` (`handleMunHover`, `brFill`, `munFill`).
   - Dados derivados com `useMemo` (`raceById`, `presTop2`, `presColors`, `predictorInputs`, `projected`). Nunca recalcular parse/cores dentro do JSX.
   - Estado local só para UI isolada (`Avatar` guarda `err` do `onError` e cai para `avatar-fallback` com iniciais). Estado de UI da página vive em hook próprio (`useFirstTurnUI`), nunca espalhado no `page.tsx`.
   - Listas com chave estável (`c.key`, `computeItemKey={(_idx, c) => c.key}`). Lista longa usa `Virtuoso`; lista curta usa `.map` direto.

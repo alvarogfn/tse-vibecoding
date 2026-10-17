@@ -4,7 +4,7 @@ import { UFS, fmtInt } from '@/lib/tse.js';
 import {
   BRAZIL_SVG_URL,
   MG_SVG_URL,
-  MICRO_GRAY,
+  NO_DATA_GRAY,
   ROUND2_LIVE,
   USE_ROUND2_GEO,
   JAIR_BLUE,
@@ -16,6 +16,7 @@ import { usePolling } from '@/hooks/use-polling';
 import { useSecondTurnTop } from '@/pages/second-turn/hooks/use-second-turn-top';
 import { useUfRacesFindAll } from '@/pages/second-turn/hooks/use-uf-races-find-all';
 import { useMgGeo } from '@/pages/second-turn/hooks/use-mg-geo';
+import { useMgMunRacesFindAll } from '@/pages/second-turn/hooks/use-mg-mun-races-find-all';
 import { CandLegend } from '@/pages/second-turn/components/CandLegend';
 import { BrazilMap } from '@/pages/second-turn/components/BrazilMap';
 import { MinasMap } from '@/pages/second-turn/components/MinasMap';
@@ -28,18 +29,16 @@ export default function SegundoTurno(): React.JSX.Element {
   const { pres, presMG, presErr, presMGErr, loading, refetch: fetchTop } = useSecondTurnTop();
   const presTop2ForUf = useMemo(() => (pres?.candidatos || []).slice(0, 2).map((c) => String(c.numero)), [pres]);
   const { ufWinners, ufMeta, ufStats, refetch: refetchUFs } = useUfRacesFindAll(presTop2ForUf, ROUND2_LIVE && !!pres);
-  // TODO(endpoint 2T por microrregião): winnersByMicro fica {} até o TSE publicar;
-  // então re-adicionar o setter e chamar setWinnersByMicro com o mapa real.
-  const [winnersByMicro] = useState<Record<string, string>>({});
+  // Apuração municipal de MG (presidente 2T): 853 arquivos `{uf}{codTse5}-c0001-e{ele}-u`
+  // sob `dados/mg/`; cada município pinta com o vencedor local entre os 2 finalistas.
+  const { munWinners, munMeta, refetch: refetchMun } = useMgMunRacesFindAll(presTop2ForUf, ROUND2_LIVE && !!pres);
   const [auto, setAuto] = useState<boolean>(true);
   const [hoverUF, setHoverUF] = useState<string | null>(null);
   const [hoverMun, setHoverMun] = useState<string | null>(null);
 
   const br = useSvgMap(BRAZIL_SVG_URL, 'BR-');
   const mg = useSvgMap(MG_SVG_URL, 'mun_');
-  const mgMicro = useSvgMap(MG_SVG_URL, 'micro_31');
   const mgGeo = useMgGeo();
-  const munToMicro = mgGeo.munMicro;
 
   // Callback estável p/ os MunPaths memoizados não recriarem handlers a cada render
   const handleMunHover = useCallback((id: string | null) => setHoverMun(id), []);
@@ -48,6 +47,9 @@ export default function SegundoTurno(): React.JSX.Element {
   // Varredura das UFs em cadência própria (mais lenta): sem isso o mapa do
   // Brasil + preditor congelariam nos primeiros vencedores (H1-página).
   usePolling(refetchUFs, 60000, auto && ROUND2_LIVE);
+  // Varredura municipal de MG bem mais lenta (853 arquivos): o mapa de MG
+  // converge em minutos, sem afogar a apuração nacional/UFs.
+  usePolling(refetchMun, 300000, auto && ROUND2_LIVE);
 
   const presTop2 = useMemo(() => (pres?.candidatos || []).slice(0, 2), [pres]);
   const mgTop2 = useMemo(() => (presMG?.candidatos || []).slice(0, 2), [presMG]);
@@ -142,28 +144,31 @@ export default function SegundoTurno(): React.JSX.Element {
 
   const brFill = useCallback(
     (pathId: string): string => {
-      if (!USE_ROUND2_GEO) return MICRO_GRAY;
+      if (!USE_ROUND2_GEO) return NO_DATA_GRAY;
       const uf = pathId.replace('BR-', '').toLowerCase();
       // 1. vencedor real (com urna apurada); 2. projeção do modelo; 3. cinza.
       const w = ufWinners[uf];
       if (w && hasRealCount(w) && presColors[w.numero]) return presColors[w.numero] as string;
       if (projected.colors[uf]) return projected.colors[uf] as string;
-      return MICRO_GRAY;
+      return NO_DATA_GRAY;
     },
     [ufWinners, presColors, projected],
   );
 
-  // Cor de cada microrregião pelo vencedor local (azul/vermelho); cinza claro sem dados do 2º turno
-  const microFill = useCallback(
-    (microId: string): string => {
-      const num = winnersByMicro[microId];
-      if (num && mgColors[num]) return mgColors[num];
-      return MICRO_GRAY;
+  // Cor de cada município pelo vencedor local (azul/vermelho); cinza sem dados do 2º turno.
+  // Sem urna apurada não há cor: exibir matiz partidária com 0 votos sugeriria
+  // apoio inexistente — mesma regra do mapa do Brasil (M1).
+  const munFill = useCallback(
+    (munIbge: string): string => {
+      const w = munWinners[munIbge];
+      if (w && hasRealCount(w) && mgColors[w.numero]) return mgColors[w.numero] as string;
+      return NO_DATA_GRAY;
     },
-    [winnersByMicro, mgColors],
+    [munWinners, mgColors],
   );
 
   const countedUFs = Object.keys(ufWinners).length;
+  const countedMuns = Object.keys(munWinners).length;
   // UFs pintadas pela projeção (sem apurado real): informa no hint.
   const projCount = Object.keys(projected.names).filter(
     (uf) => !(ufWinners[uf] && hasRealCount(ufWinners[uf])),
@@ -276,28 +281,26 @@ export default function SegundoTurno(): React.JSX.Element {
               )
             }
             hint={(() => {
-              if (!hoverMun) return `${mgMicro.paths.length || '…'} microrregiões · Flávio Bolsonaro (azul) · Lula (vermelho) · sem dados (cinza)`;
+              if (!hoverMun)
+                return `${mg.paths.length || '…'} municípios · Flávio Bolsonaro (azul) · Lula (vermelho) · sem dados (cinza) · ${countedMuns}/${munMeta.total} apurados`;
               const ibge = hoverMun.replace('mun_', '');
               const nome = mgGeo.names[ibge] || `IBGE ${ibge}`;
-              const microId = munToMicro[ibge];
-              const microNome = (microId && mgGeo.microNames[microId]) || '';
-              return `${nome}${microNome ? ` · Micro ${microNome}` : ''}`;
+              const w = munWinners[ibge];
+              if (w && hasRealCount(w)) return `${nome} · ${w.nome} (${w.partido}) ${fmtPct(w.pvapNum)}`;
+              return `${nome} · sem dados do 2º turno`;
             })()}
           >
             <CandLegend cands={mgTop2Shown} colors={mgColors} />
             <div className="st-map">
-              {(mg.loading || mgMicro.loading) && <div className="hint">Carregando mapa de Minas…</div>}
-              {(mg.error || mgMicro.error) && <div className="err">{mg.error || mgMicro.error}</div>}
-              {!mg.loading && !mg.error && !mgMicro.loading && !mgMicro.error && (
+              {mg.loading && <div className="hint">Carregando mapa de Minas…</div>}
+              {mg.error && <div className="err">{mg.error}</div>}
+              {!mg.loading && !mg.error && (
                 <MinasMap
-                  microPaths={mgMicro.paths}
                   munPaths={mg.paths}
-                  microFill={microFill}
-                  winnersByMicro={winnersByMicro}
+                  munFill={munFill}
+                  munWinners={munWinners}
                   mgTop2Shown={mgTop2Shown}
-                  microNames={mgGeo.microNames}
                   names={mgGeo.names}
-                  munToMicro={munToMicro}
                   hoverMun={hoverMun}
                   onHover={handleMunHover}
                 />
@@ -308,7 +311,7 @@ export default function SegundoTurno(): React.JSX.Element {
         <section className="st-card st-full">
           <PredictorCard />
         </section>
-        <div className="footer">2º turno · presidente por UF (27 arquivos TSE) · presidente em MG por microrregião (cinza = aguardando endpoint do 2º turno)</div>
+        <div className="footer">2º turno · presidente por UF (27 arquivos TSE) · presidente em MG por município ({countedMuns}/{munMeta.total} apurados)</div>
       </div>
     </div>
   );

@@ -1,0 +1,102 @@
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { parseBrPct } from '@/helpers/election.js';
+import { fetchRaceJson, parseRace, parseBrInt } from '@/lib/tse.js';
+import type { Candidate } from '@/lib/tse.js';
+import { RACE_PRES } from '@/lib/second-turn.js';
+import type { UFWinner } from '@/lib/second-turn.js';
+import { mountURL } from '@/helpers/mount-url.js';
+import { PATH_RACE_FIND_BY_ID, buildMunRaceFile } from '@/api/race.js';
+import MUN_TSE from '@/data/mg-mun-tse.json';
+
+export interface MgMunMeta {
+  done: number;
+  total: number;
+  at: string | null;
+}
+
+// Fonte de verdade dos 853 municípios: mapa estático IBGE → TSE (5 dígitos).
+// Independe do fetch do IBGE (nomes) — sem ele, o mapa pinta com `IBGE {id}`.
+const MUN_IDS: string[] = Object.keys(MUN_TSE as Record<string, string>);
+const BATCH = 12;
+
+// Fail-Safe contract: per-municipality failures stay neutral (município sem
+// dado — mantém cinza), sweep-level failures resolve to error state — never
+// throws. Espelha useUfRacesFindAll, mas em 853 arquivos municipais
+// (`{uf}{codTse5}-c0001-e{ele}-u` sob `dados/mg/`, padrão validado no 1T).
+export const useMgMunRacesFindAll = (topNumeros: string[], enabled: boolean) => {
+  const [munWinners, setMunWinners] = useState<Record<string, UFWinner>>({});
+  const [munMeta, setMunMeta] = useState<MgMunMeta>({ done: 0, total: MUN_IDS.length, at: null });
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Geração do passe: varreduras sobrepostas resolvem por último-vencedor —
+  // só a geração atual commita (mesmo padrão da varredura de UFs).
+  const genRef = useRef(0);
+
+  const fetchMun = useCallback(async (nums: string[]): Promise<void> => {
+    const gen = genRef.current + 1;
+    genRef.current = gen;
+    const alive = (): boolean => gen === genRef.current;
+    try {
+      const out: Record<string, UFWinner> = {};
+      const map = MUN_TSE as Record<string, string>;
+      for (let i = 0; i < MUN_IDS.length; i += BATCH) {
+        const batch = MUN_IDS.slice(i, i + BATCH);
+        await Promise.all(
+          batch.map(async (ibge): Promise<void> => {
+            const cod = map[ibge];
+            if (!cod) return;
+            const url = mountURL(PATH_RACE_FIND_BY_ID, {
+              pathParams: { ciclo: RACE_PRES.ciclo, ele: RACE_PRES.ele, scope: 'mg', file: buildMunRaceFile('mg', cod, '0001', RACE_PRES.ele) },
+            });
+            try {
+              const raw = await fetchRaceJson(url);
+              const parsed = parseRace({ ...RACE_PRES, ufFoto: 'mg' }, raw);
+              const cands = parsed.candidatos || [];
+              let win: Candidate | undefined = cands[0];
+              if (nums?.length >= 2) {
+                const finalistas = cands.filter((c) => nums.includes(String(c.numero)));
+                if (finalistas.length) win = finalistas.sort((a, b) => b.vap - a.vap)[0];
+              }
+              if (win)
+                out[ibge] = {
+                  numero: String(win.numero),
+                  nome: win.nomeUrna,
+                  partido: win.partido,
+                  pvapNum: win.pvapNum,
+                  pst: parsed.meta?.s?.pst,
+                  vap: win.vap,
+                };
+            } catch {
+              /* município sem dado — mantém neutro */
+            }
+          }),
+        );
+        if (!alive()) return;
+        setMunMeta({ done: Math.min(i + BATCH, MUN_IDS.length), total: MUN_IDS.length, at: null });
+      }
+      if (!alive()) return;
+      setMunWinners(out);
+      setMunMeta({ done: MUN_IDS.length, total: MUN_IDS.length, at: new Date().toLocaleTimeString('pt-BR') });
+      setError(null);
+    } catch (e: unknown) {
+      setError(String((e as Error)?.message || e));
+    }
+  }, []);
+
+  const topKey = (topNumeros || []).join('|');
+  const refetch = useCallback(async (): Promise<void> => {
+    setLoading(true);
+    await fetchMun(topKey ? topKey.split('|') : []);
+    setLoading(false);
+  }, [fetchMun, topKey]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    if (!topKey) return;
+    setLoading(true);
+    fetchMun(topKey.split('|')).finally(() => setLoading(false));
+  }, [enabled, topKey, fetchMun]);
+
+  return { munWinners, munMeta, meta: munMeta, error, loading, refetch };
+};

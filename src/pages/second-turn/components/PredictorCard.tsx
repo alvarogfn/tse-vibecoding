@@ -96,6 +96,17 @@ export function PredictorCard(): React.JSX.Element {
     return m;
   }, [snapshot.series]);
 
+  // Nomes dos finalistas p/ o tooltip (extraídos das séries nacionais;
+  // fallback garante tooltip legível mesmo sem elas).
+  const candNames = useMemo<{ flavio: string; lula: string }>(() => {
+    const pick = (kind: 'br-flavio' | 'br-lula', fallback: string): string => {
+      const label = snapshot.series.find((s) => s.kind === kind)?.label ?? '';
+      const after = label.split('·')[1]?.trim();
+      return after && after.length > 0 ? after : fallback;
+    };
+    return { flavio: pick('br-flavio', 'Flávio'), lula: pick('br-lula', 'Lula') };
+  }, [snapshot.series]);
+
   // UM dataset por série (histórico + projeção concatenados, ordenados por x);
   // trecho sólido = apurado, tracejado = projeção. Nacionais sempre visíveis.
   const datasets = useMemo<ChartDataset<'line', { x: number; y: number | null }[]>[]>(
@@ -196,8 +207,12 @@ export function PredictorCard(): React.JSX.Element {
             },
             label: (item: TooltipItem<'line'>): string => {
               const y = item.parsed.y;
-              const value = typeof y === 'number' ? fmtPct(y) : 'sem dado';
-              return ` ${item.dataset.label ?? ''}: ${value}`;
+              if (typeof y !== 'number') return ` ${item.dataset.label ?? ''}: sem dado`;
+              // A série guarda o share do Lula; o tooltip exibe quem vence no
+              // ponto (nome + % dele): y >= 50 → Lula com y, senão Flávio com 100 − y.
+              const lulaWins = y >= 50;
+              const name = lulaWins ? candNames.lula : candNames.flavio;
+              return ` ${item.dataset.label ?? ''}: ${name} ${fmtPct(lulaWins ? y : 100 - y)}`;
             },
             footer: (items: TooltipItem<'line'>[]): string => {
               const first = items[0];
@@ -228,7 +243,7 @@ export function PredictorCard(): React.JSX.Element {
         },
       },
     }),
-    [snapshot.series, regions, yBounds],
+    [snapshot.series, regions, yBounds, candNames],
   );
 
   const ariaLabel = useMemo<string>(() => {

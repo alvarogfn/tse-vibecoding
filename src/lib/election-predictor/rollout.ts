@@ -6,6 +6,7 @@ import { buildFeatureVector, clampPct } from '@/lib/election-predictor/features.
 export const ROLLOUT_SLICES = 1000;
 
 export interface RolloutUf {
+  uf: string;
   counted: number;
   share: number | null;
   anchor: number;
@@ -26,7 +27,6 @@ export interface RolloutResult {
  * `await tf.nextFrame()` a cada 200 fatias cede a main thread (sem jank).
  * Flutuações emergem da resposta da rede ao counted-x e ao share evolutivo —
  * é o modelo prevendo a trajetória, não uma reta até a âncora.
- * Sem 1T/pesquisas: baseline/poll/bias entram neutros (0.5) — só o 2T move.
  */
 export async function rollout(
   tf: TfModule,
@@ -48,10 +48,8 @@ export async function rollout(
       return buildFeatureVector({
         counted: x,
         share: s,
-        baseline1T: null,
-        pollAvg: null,
-        ptBias: null,
         anchor: u.anchor,
+        uf: u.uf,
       });
     });
     const raws = predictRaw01Batch(tf, model, batch);

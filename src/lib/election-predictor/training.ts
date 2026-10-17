@@ -4,14 +4,14 @@ import { buildAnalyticModel } from '@/lib/election-predictor/analytic-model.js';
 import { toDataset } from '@/lib/election-predictor/dataset.js';
 import type { TrainRow } from '@/lib/election-predictor/dataset.js';
 
-// v4: pivô p/ 100% 2T — invalida os pesos pré-treinados no 1T (v3 e
-// anteriores). O modelo nasce dos priors analíticos e só aprende com os
-// snapshots 2T da apuração.
-const IDB_URL = 'indexeddb://election-predictor-v4';
+// v5: entrada com one-hot da UF (dim 6→30) — pesos v4 incompatíveis.
+// O modelo nasce dos priors analíticos e só aprende com os snapshots
+// da apuração.
+const IDB_URL = 'indexeddb://election-predictor-v5';
 const ONLINE_EPOCHS = 5;
 
 let cached: tfTypes.LayersModel | null = null;
-/** Checkpoints de regimes antigos (v1–v3) — órfãos que só gastam quota (N10). */
+/** Checkpoints de regimes anteriores (v1–v4) — órfãos que só gastam quota (N10). */
 let orphansCleaned = false;
 /** Fila de treino: fitDataset concorrentes no mesmo singleton se corrompem (N3). */
 let trainChain: Promise<void> = Promise.resolve();
@@ -24,7 +24,7 @@ export function modelProvenance(): string {
 }
 
 /**
- * Modelo pronto: tenta IndexedDB (fit 2T anterior) → checkpoint estático →
+ * Modelo pronto: tenta IndexedDB (fit anterior) → checkpoint estático →
  * priors analíticos (sem treino; salva no IDB p/ o fine-tune retomar).
  * Chamadas seguintes retornam o singleton (treino incremental via fineTune).
  */
@@ -37,6 +37,7 @@ export async function ensureModel(tf: TfModule): Promise<tfTypes.LayersModel> {
         'indexeddb://election-predictor-v1',
         'indexeddb://election-predictor-v2',
         'indexeddb://election-predictor-v3',
+        'indexeddb://election-predictor-v4',
       ]) {
         try {
           await tf.io.removeModel(url);
@@ -66,9 +67,6 @@ export async function ensureModel(tf: TfModule): Promise<tfTypes.LayersModel> {
   cached = model;
   return model;
 }
-
-/** Compat: nome antigo (pré-treino 1T removido) — delega p/ ensureModel. */
-export const ensurePretrainedModel = ensureModel;
 
 /** Fine-tune online (warm-start nos pesos atuais) + salva no IndexedDB. */
 export async function fineTuneModel(tf: TfModule, model: tfTypes.LayersModel, rows: TrainRow[]): Promise<void> {

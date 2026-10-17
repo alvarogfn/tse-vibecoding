@@ -1,32 +1,42 @@
 /**
  * election-predictor/features — input sanitization + feature engineering.
  *
- * Feature table (6 dims p/ preservar a topologia da rede; pivô 100% 2T):
+ * Feature table (input dim = 3 + 27 UF one-hot = 30):
  *
- * | # | Feature                    | Normalization | Source                          |
- * |---|----------------------------|---------------|---------------------------------|
- * | 0 | percentual_apuracao_atual  | counted / 100 | `counted` (0–100)               |
- * | 1 | proporcao_voto_atual       | share / 100   | `lulaShare`, null → anchor      |
- * | 2 | dinamica_tempo_1_turno     | / 100         | sempre neutro (legado 1T)       |
- * | 3 | resultado_final_1_turno    | / 100         | sempre neutro (legado 1T)       |
- * | 4 | media_agregada_pesquisas   | / 100         | sempre neutro (legado polls)     |
- * | 5 | viabilidade_historica_pt   | 0–1           | sempre neutro (legado 1T)       |
+ * | #     | Feature                   | Normalization | Source                     |
+ * |-------|---------------------------|---------------|----------------------------|
+ * | 0     | percentual_apuracao_atual | counted / 100 | `counted` (0–100)          |
+ * | 1     | proporcao_voto_atual      | share / 100   | `share`, null → anchor     |
+ * | 2     | ancora                    | anchor / 100  | `anchor` (share ?? 50)     |
+ * | 3–29  | uf_one_hot                | 0/1           | `uf` (desconhecida → zeros)|
  *
  * Notes:
- * - Pivô 100% 2T (weights/polls/1T removidos): chamadores passam null p/
- *   baseline1T/pollAvg/ptBias e as features 2–5 caem no prior neutro 0.5.
- *   Os slots são mantidos p/ não quebrar os pesos salvos (input dim = 6).
- * - Missing-data rule: null/NaN numeric inputs degrade to neutral priors
- *   (anchor for share, 0.5 for baseline/poll/bias) — never NaN, never throw.
+ * - O one-hot diz à rede QUAL UF está prevendo: os pesos compartilhados
+ *   aprendem a dinâmica global e os pesos do one-hot aprendem o viés de
+ *   cada UF — só com os dados da apuração (sem fonte externa).
+ *   UF desconhecida cai no vetor zero (neutro).
+ * - Missing-data rule: null/NaN degrade to neutral priors
+ *   (anchor for share) — never NaN, never throw.
  */
+
+import { UFS } from '@/lib/tse.js';
+
+/** Ordem canônica das 27 UFs (índice do one-hot). */
+export const UF_ORDER: readonly string[] = UFS.map(([sigla]) => sigla.toLowerCase());
+
+/** Posição da UF no one-hot, ou -1 se desconhecida (vetor zero). */
+export function ufIndexOf(uf: string): number {
+  return UF_ORDER.indexOf(uf.toLowerCase());
+}
+
+/** Dimensão de entrada da rede: counted + share + anchor + one-hot UF. */
+export const INPUT_DIM = 3 + UF_ORDER.length;
 
 export interface FeatureArgs {
   counted: number;
   share: number | null;
-  baseline1T: number | null | undefined;
-  pollAvg: number | null | undefined;
-  ptBias: number | null | undefined;
   anchor: number;
+  uf: string;
 }
 
 const clamp01 = (v: number): number => {
@@ -53,43 +63,23 @@ export function cleanShare(value: number | null | undefined): number | null {
 }
 
 /**
- * Structural anchor for stabilization: 100% 2T (share ?? 50).
- * baseline1T/pollAvg mantidos na assinatura p/ compat, mas o pivô só usa
- * o share observado — sem 1T, sem pesquisas. Fail-Safe por construção.
+ * Structural anchor for stabilization: share observado ?? 50 (neutro).
+ * Fail-Safe por construção — sempre retorna 0–100 finito.
  */
-export function resolveAnchor(
-  baseline1T: number | null | undefined,
-  pollAvg: number | null | undefined,
-  share: number | null | undefined,
-): number {
-  const raw = baseline1T ?? pollAvg ?? share ?? 50;
+export function resolveAnchor(share: number | null | undefined): number {
+  const raw = share ?? 50;
   return clampPct(raw);
 }
 
-/**
- * PT-bias prior on 0–1. Accepts either 0–1 fractions or 0–100 percentages
- * (values > 1 are scaled down); null/NaN → neutral 0.5.
- */
-export function normalizeBias(ptBias: number | null | undefined): number {
-  if (ptBias == null || !Number.isFinite(ptBias)) return 0.5;
-  const scaled = ptBias > 1 ? ptBias / 100 : ptBias;
-  return clamp01(scaled);
-}
-
-/** Build the 6-feature normalized vector consumed by the dense network. */
+/** Build the normalized feature vector consumed by the dense network. */
 export function buildFeatureVector(args: FeatureArgs): number[] {
   const counted01 = clampCounted(args.counted) / 100;
   const shareNow = args.share != null && Number.isFinite(args.share) ? args.share : args.anchor;
-  const base = args.baseline1T ?? 50;
-  const poll = args.pollAvg ?? 50;
-  return [
-    counted01,
-    clamp01(shareNow / 100),
-    clamp01(base / 100),
-    clamp01(base / 100),
-    clamp01(poll / 100),
-    normalizeBias(args.ptBias),
-  ];
+  const anchor01 = clamp01(args.anchor / 100);
+  const idx = ufIndexOf(args.uf);
+  const oneHot: number[] = new Array<number>(UF_ORDER.length).fill(0);
+  if (idx >= 0) oneHot[idx] = 1;
+  return [counted01, clamp01(shareNow / 100), anchor01, ...oneHot];
 }
 
 /**

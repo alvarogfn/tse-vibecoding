@@ -2,8 +2,8 @@
  * election-predictor/analytic-model — TensorFlow.js topology + weight priors.
  *
  * Topology (per repo doc, "Definição das Camadas do Modelo Preditivo"):
- * dense feedforward 6 features → ReLU hidden layers (16 → 12 → 8) →
- * 1 sigmoid neuron predicting the final Lula share (0–1, ×100 for display).
+ * dense feedforward (counted + share + anchor + UF one-hot) → ReLU hidden
+ * layers (16 → 12 → 8) → 1 sigmoid neuron predicting the final Lula share
  * Compiled with Adam + MSE at build time, matching the doc's prescription.
  * Training happens in `training.ts` (fine-tune online on 2T session snapshots
  * via `tf.data.Dataset`, checkpoint saved to IndexedDB); this module owns
@@ -36,6 +36,7 @@
  */
 
 import type * as tfTypes from '@tensorflow/tfjs';
+import { INPUT_DIM } from '@/lib/election-predictor/features.js';
 
 /** The lazily-imported tfjs module namespace (runtime value, type-only here). */
 export type TfModule = typeof import('@tensorflow/tfjs');
@@ -43,9 +44,8 @@ export type TfModule = typeof import('@tensorflow/tfjs');
 /** Fixed seed ⇒ deterministic hidden projections across sessions. */
 const ANALYTIC_SEED = 20260201;
 
-const INPUT_DIM = 6;
 const HIDDEN: ReadonlyArray<readonly [number, number]> = [
-  [6, 16],
+  [INPUT_DIM, 16],
   [16, 12],
   [12, 8],
 ];
@@ -98,7 +98,7 @@ export function buildAnalyticModel(tf: TfModule): tfTypes.LayersModel {
       }
       const kernel = tf.tensor2d(kernelVals, [fanIn, fanOut]);
       // Viés positivo pequeno: metade dos ReLUs nasceria morta com bias zero
-      // e o pré-treino não convergia (saídas chapadas ⇒ mapa todo azul).
+      // e o treino não convergia (saídas chapadas ⇒ mapa todo azul).
       const bias = tf.fill([fanOut], 0.1);
       garbage.push(kernel, bias);
       const layer = model.layers[li];
@@ -118,8 +118,8 @@ export function buildAnalyticModel(tf: TfModule): tfTypes.LayersModel {
     for (const t of garbage) t.dispose();
   }
 
-  // lr 0.01 (não o 0.001 padrão): o pré-treino tem poucas epochs p/
-  // separar as UFs (metas 35–68); com 0.001 os pesos quase não saíam do lugar.
+  // lr 0.01 (não o 0.001 padrão): poucas epochs p/ separar as UFs;
+  // com 0.001 os pesos quase não saem do lugar.
   model.compile({ optimizer: tf.train.adam(0.01), loss: 'meanSquaredError' });
   return model;
 }

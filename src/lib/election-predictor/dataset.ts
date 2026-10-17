@@ -12,14 +12,13 @@ export interface SessionPoint {
 }
 
 /**
- * Linhas online: snapshots 2T da sessão (única fonte de treino).
- * Sem 1T, sem pesquisas: cada ponto vira (features no instante → share
- * observado). Pontos sem share são ignorados — o treino só começa quando
- * a apuração do 2T começa.
+ * Linhas online: snapshots 2T da apuração (única fonte de treino).
+ * Cada ponto vira (features no instante → share observado). Pontos sem
+ * share são ignorados — o treino só começa quando a apuração começa.
  */
 export function onlineRows(series: ReadonlyMap<string, SessionPoint[]>, perUfCap = 10): TrainRow[] {
   const rows: TrainRow[] = [];
-  for (const [, pts] of series) {
+  for (const [uf, pts] of series) {
     const tail = pts.filter((p) => p.share != null).slice(-perUfCap);
     for (const p of tail) {
       const share = p.share as number;
@@ -27,10 +26,8 @@ export function onlineRows(series: ReadonlyMap<string, SessionPoint[]>, perUfCap
         xs: buildFeatureVector({
           counted: p.counted,
           share,
-          baseline1T: null,
-          pollAvg: null,
-          ptBias: null,
           anchor: share,
+          uf,
         }),
         ys: [Math.min(1, Math.max(0, share / 100))],
       });
@@ -43,7 +40,7 @@ export function onlineRows(series: ReadonlyMap<string, SessionPoint[]>, perUfCap
  * tf.data.Dataset embaralhado (seed fixa ⇒ determinístico) em batches.
  * NOTA: após `.batch()`, o tf.data já empilha em Tensores — NÃO converter de
  * novo (tf.tensor2d(tensor) lança "requires values to be number[][]...").
- * O batch `{xs: Tensor[batch,6], ys: Tensor[batch,1]}` vai direto ao fitDataset.
+ * O batch `{xs: Tensor[batch,dim], ys: Tensor[batch,1]}` vai direto ao fitDataset.
  */
 export function toDataset(tf: TfModule, rows: TrainRow[], batchSize: number) {
   return tf.data

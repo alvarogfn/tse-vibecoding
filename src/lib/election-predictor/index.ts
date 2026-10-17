@@ -1,11 +1,11 @@
 /**
  * election-predictor — real-time electoral projection (TensorFlow.js, client-side).
  *
- * Pipeline 100% 2T (sem 1T, sem pesquisas):
- *  1. Per-UF dense feedforward (6 normalized features → sigmoid).
+ * Pipeline:
+ *  1. Per-UF dense feedforward (counted + share + anchor + UF one-hot → sigmoid).
  *  2. Residual-delta-swing vs structural anchor + stabilization blend
  *     `alpha = min(1, counted/60)` toward the anchor
- *     (anchor = share 2T observado ?? 50 — mesma definição no treino e na
+ *     (anchor = share observado ?? 50 — mesma definição no treino e na
  *     inferência).
  *  3. Bottom-up national aggregation: Σ(uf_pred × weight)/Σweight with
  *     weight = eleitorado || validos; Flávio national = 100 − Lula national.
@@ -102,7 +102,7 @@ let version = 0;
 const listeners = new Set<() => void>();
 /** Monotonic run id — guards overlapping recomputes (last push wins). */
 let runId = 0;
-/** Key of the last pushed inputs — identical polls skip the pass (no chart rebuild). */
+/** Key of the last pushed inputs — identical inputs skip the pass (no chart rebuild). */
 let lastInputsKey: string | null = null;
 
 function setSnapshot(next: PredictorSnapshot): void {
@@ -150,9 +150,9 @@ function prepareUf(input: PredictorUfInput): PreparedUf {
   // 0 votos com 0% apurado = ausência de evidência, NÃO 0% de apoio.
   // Sem esse guarda a âncora colapsava a 0 e o gráfico cravava 100×0.
   const share = rawShare === 0 && counted <= 0 ? null : rawShare;
-  // Âncora 100% 2T: share observado ?? 50 (neutro). Mesma definição no
-  // treino (dataset.onlineRows) e na inferência — nunca diverge.
-  const anchor = resolveAnchor(null, null, share);
+  // Âncora: share observado ?? 50 (neutro). Mesma definição no treino
+  // (dataset.onlineRows) e na inferência — nunca diverge.
+  const anchor = resolveAnchor(share);
   return {
     input,
     counted,
@@ -255,8 +255,8 @@ interface SanitizedInputs {
 }
 
 /**
- * Stable identity for an inputs payload. Polling rebuilds the object every
- * cycle with the same values — comparing keys avoids recompute + notify, so
+ * Stable identity for an inputs payload. The 15s refetch rebuilds the object
+ * every cycle with the same values — comparing keys avoids recompute + notify, so
  * `useSyncExternalStore` subscribers (and the chart memos) never fire.
  */
 function inputsKey(sanitized: SanitizedInputs): string {
@@ -355,6 +355,7 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
         tf,
         model,
         prepared.map((p) => ({
+          uf: p.input.uf,
           counted: p.counted,
           share: p.share,
           anchor: p.anchor,
@@ -405,7 +406,7 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
     });
   } catch (err) {
     if (myRun !== runId) return; // superseded — stay silent.
-    // Retryable: forget the failed inputs key so the next identical poll
+    // Retryable: forget the failed inputs key so the next identical input
     // retries instead of sticking on the error snapshot forever (H2).
     lastInputsKey = null;
     // Fail-Safe: surface the error, keep the previous series (if any).
@@ -424,7 +425,7 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
 // Contract
 // ---------------------------------------------------------------------------
 
-/** Últimos inputs válidos — p/ retreinar do zero sem esperar o próximo poll. */
+/** Últimos inputs válidos — p/ retreinar do zero sem esperar o próximo ciclo. */
 let lastSanitized: SanitizedInputs | null = null;
 
 export function pushPredictorInputs(inputs: PredictorInputs): void {
@@ -442,7 +443,7 @@ export function pushPredictorInputs(inputs: PredictorInputs): void {
     nationalShare: inputs.nationalShare ?? null,
   };
   // Cheapest rebuild fix: identical inputs (same values, new object identity
-  // from the 15s poll) skip the pass entirely — no loading flash, no notify,
+  // from the 15s tick) skip the pass entirely — no loading flash, no notify,
   // so the chart memos keep their refs and Chart.js doesn't rebuild.
   const key = inputsKey(sanitized);
   if (key === lastInputsKey) return;
@@ -480,7 +481,7 @@ export function retrainPredictorFromScratch(): void {
       await tf.ready();
       await resetSavedModel(tf);
       if (myRun !== runId || lastSanitized == null) return;
-      // Marca como processado p/ o próximo poll idêntico não repetir o passe.
+      // Marca como processado p/ o próximo input idêntico não repetir o passe.
       lastInputsKey = inputsKey(lastSanitized);
       await recompute(lastSanitized, myRun);
     } catch (err) {

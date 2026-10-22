@@ -118,10 +118,20 @@ export function buildAnalyticModel(tf: TfModule): tfTypes.LayersModel {
     for (const t of garbage) t.dispose();
   }
 
-  // lr 0.01 (não o 0.001 padrão): poucas epochs p/ separar as UFs;
-  // com 0.001 os pesos quase não saem do lugar.
-  model.compile({ optimizer: tf.train.adam(0.01), loss: 'meanSquaredError' });
+  compileModel(tf, model);
   return model;
+}
+
+/**
+ * Compila o modelo p/ treino (`fitDataset`). OBRIGATÓRIO após carregar do
+ * IndexedDB/checkpoint: o TF.js persiste topologia + pesos, mas NÃO o
+ * optimizer — sem recompilar, o primeiro fine-tune lança "The model needs to
+ * be compiled before being used" exatamente quando a apuração começa.
+ * lr 0.01 (não o 0.001 padrão): poucas epochs p/ separar as UFs; com 0.001
+ * os pesos quase não saem do lugar.
+ */
+export function compileModel(tf: TfModule, model: tfTypes.LayersModel): void {
+  model.compile({ optimizer: tf.train.adam(0.01), loss: 'meanSquaredError' });
 }
 
 /**

@@ -1,6 +1,6 @@
 import type * as tfTypes from '@tensorflow/tfjs';
 import type { TfModule } from '@/lib/election-predictor/analytic-model.js';
-import { buildAnalyticModel } from '@/lib/election-predictor/analytic-model.js';
+import { buildAnalyticModel, compileModel } from '@/lib/election-predictor/analytic-model.js';
 import { toDataset } from '@/lib/election-predictor/dataset.js';
 import type { TrainRow } from '@/lib/election-predictor/dataset.js';
 
@@ -49,6 +49,9 @@ export async function ensureModel(tf: TfModule): Promise<tfTypes.LayersModel> {
   }
   try {
     cached = await tf.loadLayersModel(IDB_URL);
+    // Pesos persistidos vêm SEM optimizer: recompilar antes de qualquer
+    // fine-tune (senão fitDataset lança e o preditor morre no 1º snapshot).
+    compileModel(tf, cached);
     provenance = 'indexeddb';
     return cached;
   } catch {
@@ -56,6 +59,7 @@ export async function ensureModel(tf: TfModule): Promise<tfTypes.LayersModel> {
   }
   try {
     cached = await tf.loadLayersModel(`${import.meta.env.BASE_URL}models/predictor/model.json`);
+    compileModel(tf, cached);
     provenance = 'checkpoint';
     return cached;
   } catch {

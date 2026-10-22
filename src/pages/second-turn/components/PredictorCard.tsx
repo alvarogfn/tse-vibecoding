@@ -208,11 +208,15 @@ export function PredictorCard(): React.JSX.Element {
             label: (item: TooltipItem<'line'>): string => {
               const y = item.parsed.y;
               if (typeof y !== 'number') return ` ${item.dataset.label ?? ''}: sem dado`;
-              // A série guarda o share do Lula; o tooltip exibe quem vence no
-              // ponto (nome + % dele): y >= 50 → Lula com y, senão Flávio com 100 − y.
-              const lulaWins = y >= 50;
+              // A série nacional do Flávio guarda o share DELE (100 − Lula);
+              // as demais (UFs e Brasil · Lula) guardam o share do Lula.
+              // Normaliza antes de decidir o vencedor, senão o tooltip da linha
+              // do Flávio mostrava o nome do perdedor com o % do vencedor.
+              const s = snapshot.series[item.datasetIndex ?? -1];
+              const lulaShare = s?.kind === 'br-flavio' ? 100 - y : y;
+              const lulaWins = lulaShare >= 50;
               const name = lulaWins ? candNames.lula : candNames.flavio;
-              return ` ${item.dataset.label ?? ''}: ${name} ${fmtPct(lulaWins ? y : 100 - y)}`;
+              return ` ${item.dataset.label ?? ''}: ${name} ${fmtPct(lulaWins ? lulaShare : 100 - lulaShare)}`;
             },
             footer: (items: TooltipItem<'line'>[]): string => {
               const first = items[0];
@@ -248,7 +252,9 @@ export function PredictorCard(): React.JSX.Element {
 
   const ariaLabel = useMemo<string>(() => {
     if (snapshot.series.length === 0) {
-      return `Previsão do 2º turno: ${snapshot.status}. Gráfico indisponível.`;
+      return snapshot.status === 'loading'
+        ? 'Gráfico de projeção do 2º turno carregando.'
+        : 'Gráfico de projeção do 2º turno ainda sem dados. Aguardando início da apuração.';
     }
     const race = nationalsText(snapshot.series);
     const nat = snapshot.series.find((s) => s.kind === 'br-flavio' || s.kind === 'br-lula');
@@ -264,16 +270,28 @@ export function PredictorCard(): React.JSX.Element {
     );
   }, [snapshot, regions]);
 
+  // Gráfico sempre montado (mesmo sem dados): eixos 0–100 visíveis desde o
+  // início; ao chegar a primeira urna os datasets entram sem remontar o card.
+  const chartNode = (
+    <div className="relative w-full min-w-0 min-h-[260px] h-[clamp(320px,62vh,720px)] max-[900px]:h-[clamp(260px,38vh,420px)]">
+      <Line
+        data={{ datasets }}
+        options={options}
+        role="img"
+        aria-label={ariaLabel}
+        fallbackContent={<p className="hint">{ariaLabel}</p>}
+      />
+    </div>
+  );
+
   if (snapshot.status === 'idle') {
     return (
       <>
         <PredictorTitle busy={busy} />
-        <div className="summary" title="Previsão aguardando apuração">
+        <div className="summary" title="Previsão aguardando apuração" role="status">
           Aguardando início da apuração do 2º turno
         </div>
-        <div className="hint" role="status">
-          Aguardando dados do 2º turno…
-        </div>
+        {chartNode}
       </>
     );
   }
@@ -284,12 +302,10 @@ export function PredictorCard(): React.JSX.Element {
     return (
       <>
         <PredictorTitle busy={busy} />
-        <div className="summary" title="Modelo de previsão carregando">
+        <div className="summary" title="Modelo de previsão carregando" role="status">
           Modelo de previsão carregando…
         </div>
-        <div className="hint" role="status">
-          Carregando modelo…
-        </div>
+        {chartNode}
       </>
     );
   }
@@ -343,15 +359,7 @@ export function PredictorCard(): React.JSX.Element {
               </label>
             ))}
           </div>
-          <div className="relative w-full min-w-0 min-h-[260px] h-[clamp(320px,62vh,720px)] max-[900px]:h-[clamp(260px,38vh,420px)]">
-            <Line
-              data={{ datasets }}
-              options={options}
-              role="img"
-              aria-label={ariaLabel}
-              fallbackContent={<p className="hint">{ariaLabel}</p>}
-            />
-          </div>
+          {chartNode}
         </>
       ) : (
         <div className="hint" role="status">

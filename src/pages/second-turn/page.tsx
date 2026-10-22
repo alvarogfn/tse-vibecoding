@@ -167,8 +167,11 @@ export default function SegundoTurno(): React.JSX.Element {
     [munWinners, mgColors],
   );
 
-  const countedUFs = Object.keys(ufWinners).length;
-  const countedMuns = Object.keys(munWinners).length;
+  // "Apurados" = com urna/voto real, não apenas arquivo lido: os 27/853
+  // arquivos existem (0,00%) antes da votação — contá-los como apurados
+  // anunciava cobertura total com 0% das urnas.
+  const countedUFs = Object.values(ufWinners).filter((w) => hasRealCount(w)).length;
+  const countedMuns = Object.values(munWinners).filter((w) => hasRealCount(w)).length;
   // UFs pintadas pela projeção (sem apurado real): informa no hint.
   const projCount = Object.keys(projected.names).filter(
     (uf) => !(ufWinners[uf] && hasRealCount(ufWinners[uf])),
@@ -237,7 +240,7 @@ export default function SegundoTurno(): React.JSX.Element {
                       ? `${uf.toUpperCase()} · projeção: ${proj}`
                       : `${uf.toUpperCase()} · sem dados do 2º turno`;
                   })()
-                : `Flávio Bolsonaro (azul) · Lula (vermelho) · sem dados (cinza) · ${projCount} UFs em projeção · ${ufMeta.done}/${ufMeta.total} UFs${ufMeta.at ? ` · ${ufMeta.at}` : ''}`
+                : `Flávio Bolsonaro (azul) · Lula (vermelho) · sem dados (cinza) · ${projCount} UFs em projeção · ${ufMeta.done}/${ufMeta.total} arquivos${ufMeta.at ? ` · ${ufMeta.at}` : ''}`
             }
           >
             <CandLegend cands={presTop2Shown} colors={presColors} />

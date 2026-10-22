@@ -8,7 +8,9 @@ const store = localforage.createInstance({
   storeName: 'election_predictor_2t',
 });
 
-const KEY = 'election-predictor-snapshots-v1';
+// v2: invalida snapshots acumulados antes do pivô "só 2T" (o 2T ainda não
+// começou, então não há dado legítimo a perder; 1T não pode virar treino).
+const KEY = 'election-predictor-snapshots-v2';
 const PER_UF_CAP = 200;
 
 export type SnapshotSeries = Record<string, SessionPoint[]>;

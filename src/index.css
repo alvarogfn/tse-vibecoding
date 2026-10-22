@@ -55,6 +55,8 @@ a { color: inherit; }
   .page-scroll .st-card { min-height: calc(100vh - 86px); }
   .page-scroll .st-svg { max-height: none; }
   /* Terceiro card no tamanho do conteúdo (o min-height de 100vh deixava
-     um vazio enorme abaixo do gráfico). */
-  .page-scroll .st-card.st-full { min-height: 0; }
+     um vazio enorme abaixo do gráfico). `flex: none` é obrigatório: com o
+     `.wrap` auto-height, o `flex-basis: 0` herdado de `.st-card` zerava a
+     altura do card (só padding) e o overflow:hidden cortava a previsão. */
+  .page-scroll .st-card.st-full { flex: none; min-height: 0; }
 }

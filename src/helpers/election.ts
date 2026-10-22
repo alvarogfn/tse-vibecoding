@@ -41,7 +41,40 @@ export function finalistColor(c: Candidate, i: number): string {
   return partyColor(c.partidoNum, i);
 }
 
-// Busca aproximada (typo-tolerant) sobre a lista; sem query retorna tudo. Puro.
+// No empate a cor fica bem clara, mas mantém o matiz do vencedor: azul continua
+// azul (Flávio) e vermelho continua vermelho (Lula), sem virar violeta.
+const MARGIN_WHITE = 0.72;
+
+function hexToRgb(hex: string): [number, number, number] {
+  const h = hex.replace('#', '');
+  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+  return [parseInt(full.slice(0, 2), 16), parseInt(full.slice(2, 4), 16), parseInt(full.slice(4, 6), 16)];
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+  return `#${[r, g, b]
+    .map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0'))
+    .join('')}`;
+}
+
+/**
+ * Cor da margem: 50% (empate) = tom bem claro do vencedor; a partir de 60% =
+ * cor cheia. Clarear em vez de misturar com o adversário mantém o matiz do
+ * vencedor identificável mesmo numa vitória apertada. `share` é o % do vencedor
+ * na disputa entre os 2 finalistas (sempre >= 50). No 2º turno equivale ao
+ * pvapNum oficial; no 1º normaliza os demais candidatos para a disputa direta.
+ * Puro.
+ */
+export function marginColor(base: string, share: number | null | undefined): string {
+  const s = Number(share);
+  const t = Number.isFinite(s) ? Math.max(0, Math.min(1, (s - 50) / 10)) : 1;
+  if (t >= 1) return base;
+  const white = (1 - t) * MARGIN_WHITE;
+  const [r, g, b] = hexToRgb(base);
+  return rgbToHex(r + (255 - r) * white, g + (255 - g) * white, b + (255 - b) * white);
+}
+
+/** Busca aproximada (typo-tolerant) sobre a lista; sem query retorna tudo. Puro. */
 export function fuzzyFilter(list: Candidate[], query: string, keys: string[]): Candidate[] {
   const q = (query || '').trim();
   if (!q) return list;

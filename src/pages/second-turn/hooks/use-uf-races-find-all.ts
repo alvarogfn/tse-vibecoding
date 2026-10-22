@@ -60,17 +60,21 @@ export const useUfRacesFindAll = (topNumeros: string[], enabled: boolean) => {
               const raw = await fetchRaceJson(url);
               const parsed = parseRace({ ...RACE_PRES, ufFoto: uf }, raw);
               const cands = parsed.candidatos || [];
-              let win: Candidate | undefined = cands[0];
-              if (nums?.length >= 2) {
-                const finalistas = cands.filter((c) => nums.includes(String(c.numero)));
-                if (finalistas.length) win = finalistas.sort((a, b) => b.vap - a.vap)[0];
-              }
+              const finalistas =
+                nums?.length >= 2 ? cands.filter((c) => nums.includes(String(c.numero))) : cands.slice(0, 2);
+              const win: Candidate | undefined = finalistas.length
+                ? [...finalistas].sort((a, b) => b.vap - a.vap)[0]
+                : cands[0];
+              // Denominador da disputa direta: no 2T = os 2 finalistas (soma dos
+              // válidos); no 1T descarta os demais candidatos para a cor da margem.
+              const pairVap = finalistas.reduce((s, c) => s + c.vap, 0);
               if (win)
                 out[uf] = {
                   numero: String(win.numero),
                   nome: win.nomeUrna,
                   partido: win.partido,
                   pvapNum: win.pvapNum,
+                  share2: pairVap > 0 ? (win.vap / pairVap) * 100 : win.pvapNum,
                   pst: parsed.meta?.s?.pst,
                   vap: win.vap,
                 };

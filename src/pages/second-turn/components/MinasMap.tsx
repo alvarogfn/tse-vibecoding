@@ -1,4 +1,5 @@
 import { MunPath } from '@/pages/second-turn/components/MunPath';
+import { fmtPct, hasRealCount } from '@/helpers/election.js';
 import type { Candidate } from '@/lib/tse.js';
 import type { SvgPath, UFWinner } from '@/lib/second-turn.js';
 
@@ -30,7 +31,8 @@ export function MinasMap({
         const ibge = p.id.replace('mun_', '');
         const nome = names[ibge] || `IBGE ${ibge}`;
         const w = munWinners[ibge];
-        const win = w ? mgTop2Shown.find((c) => String(c.numero) === String(w.numero)) : undefined;
+        const real = w && hasRealCount(w);
+        const win = real ? mgTop2Shown.find((c) => String(c.numero) === String(w.numero)) : undefined;
         return (
           <MunPath
             key={p.id}
@@ -39,7 +41,7 @@ export function MinasMap({
             fill={munFill(ibge)}
             highlighted={hoverMun === p.id}
             onHover={onHover}
-            titleText={`${nome}${win ? ` · ${win.nomeUrna}` : ' · sem dados do 2º turno'}`}
+            titleText={`${nome}${real && w ? ` · ${win?.nomeUrna ?? w.nome} ${fmtPct(w.share2 ?? w.pvapNum)}` : ' · sem dados do 2º turno'}`}
           />
         );
       })}

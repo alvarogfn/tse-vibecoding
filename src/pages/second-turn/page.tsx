@@ -10,7 +10,7 @@ import {
   JAIR_BLUE,
   LULA_RED,
 } from '@/lib/second-turn.js';
-import { finalistColor, fmtPct, hasRealCount, parseBrPct } from '@/helpers/election.js';
+import { finalistColor, fmtPct, hasRealCount, marginColor, parseBrPct } from '@/helpers/election.js';
 import { useSvgMap } from '@/hooks/use-svg-map';
 import { usePolling } from '@/hooks/use-polling';
 import { useSecondTurnTop } from '@/pages/second-turn/hooks/use-second-turn-top';
@@ -142,29 +142,42 @@ export default function SegundoTurno(): React.JSX.Element {
     pushPredictorInputs(predictorInputs);
   }, [predictorInputs]);
 
+  // Cor do mapa pela margem: 50% (empate) = violeta; 60%+ = cor cheia do
+  // vencedor. Pré-computado por UF/município para o hover não recalcular 853
+  // misturas de cor a cada render.
+  const ufFillColors = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const [uf, w] of Object.entries(ufWinners)) {
+      const base = presColors[w.numero];
+      if (base && hasRealCount(w)) m[uf] = marginColor(base, w.share2 ?? w.pvapNum);
+    }
+    return m;
+  }, [ufWinners, presColors]);
+  const munFillColors = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const [ibge, w] of Object.entries(munWinners)) {
+      const base = mgColors[w.numero];
+      if (base && hasRealCount(w)) m[ibge] = marginColor(base, w.share2 ?? w.pvapNum);
+    }
+    return m;
+  }, [munWinners, mgColors]);
+
   const brFill = useCallback(
     (pathId: string): string => {
       if (!USE_ROUND2_GEO) return NO_DATA_GRAY;
       const uf = pathId.replace('BR-', '').toLowerCase();
       // 1. vencedor real (com urna apurada); 2. projeção do modelo; 3. cinza.
-      const w = ufWinners[uf];
-      if (w && hasRealCount(w) && presColors[w.numero]) return presColors[w.numero] as string;
-      if (projected.colors[uf]) return projected.colors[uf] as string;
-      return NO_DATA_GRAY;
+      return ufFillColors[uf] ?? projected.colors[uf] ?? NO_DATA_GRAY;
     },
-    [ufWinners, presColors, projected],
+    [ufFillColors, projected],
   );
 
-  // Cor de cada município pelo vencedor local (azul/vermelho); cinza sem dados do 2º turno.
-  // Sem urna apurada não há cor: exibir matiz partidária com 0 votos sugeriria
+  // Cor de cada município pela margem do vencedor local; cinza sem dados do 2º turno.
+  // Sem urna apurada não há cor: exibir matiz partidária com 0 votos sugeria
   // apoio inexistente — mesma regra do mapa do Brasil (M1).
   const munFill = useCallback(
-    (munIbge: string): string => {
-      const w = munWinners[munIbge];
-      if (w && hasRealCount(w) && mgColors[w.numero]) return mgColors[w.numero] as string;
-      return NO_DATA_GRAY;
-    },
-    [munWinners, mgColors],
+    (munIbge: string): string => munFillColors[munIbge] ?? NO_DATA_GRAY,
+    [munFillColors],
   );
 
   // "Apurados" = com urna/voto real, não apenas arquivo lido: os 27/853

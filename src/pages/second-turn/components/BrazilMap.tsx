@@ -22,7 +22,7 @@ export function BrazilMap({ paths, fill, hoverId, onHover, winners, projected }:
         const proj = projected[uf];
         const suffix =
           USE_ROUND2_GEO && w && hasRealCount(w)
-            ? ` · ${w.nome} ${fmtPct(w.pvapNum)}`
+            ? ` · ${w.nome} ${fmtPct(w.share2 ?? w.pvapNum)}`
             : proj
               ? ` · projeção: ${proj}`
               : ' · sem dados do 2º turno';

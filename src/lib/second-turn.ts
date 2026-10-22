@@ -66,6 +66,8 @@ export interface UFWinner {
   nome: string;
   partido: string;
   pvapNum: number;
+  /** % do vencedor só na disputa entre os 2 finalistas (no 2T equivale a pvapNum). */
+  share2?: number;
   pst?: string | number | null;
   vap: number;
 }

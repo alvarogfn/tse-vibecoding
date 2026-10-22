@@ -29,14 +29,22 @@ export const useMgMunRacesFindAll = (topNumeros: string[], enabled: boolean) => 
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Geração do passe: varreduras sobrepostas resolvem por último-vencedor —
-  // só a geração atual commita (mesmo padrão da varredura de UFs).
-  const genRef = useRef(0);
+  // Um passe por vez (mesmo padrão da varredura de UFs): o tick de 300 s não
+  // cancela um passe em voo — senão um passe mais lento que o intervalo nunca
+  // commitava. Mudança real dos finalistas entra na fila.
+  const inFlightRef = useRef(false);
+  const runningKeyRef = useRef('');
+  const queuedNumsRef = useRef<string[] | null>(null);
 
   const fetchMun = useCallback(async (nums: string[]): Promise<void> => {
-    const gen = genRef.current + 1;
-    genRef.current = gen;
-    const alive = (): boolean => gen === genRef.current;
+    const key = nums.join('|');
+    if (inFlightRef.current) {
+      if (key !== runningKeyRef.current) queuedNumsRef.current = nums;
+      return;
+    }
+    inFlightRef.current = true;
+    runningKeyRef.current = key;
+    setLoading(true);
     try {
       const out: Record<string, UFWinner> = {};
       const map = MUN_TSE as Record<string, string>;
@@ -72,31 +80,35 @@ export const useMgMunRacesFindAll = (topNumeros: string[], enabled: boolean) => 
             }
           }),
         );
-        if (!alive()) return;
+        // Commit incremental: 853 municípios pintam ao longo de ~2 min, e um
+        // passe interrompido não perde os lotes já lidos.
+        setMunWinners((prev) => ({ ...prev, ...out }));
         setMunMeta({ done: Math.min(i + BATCH, MUN_IDS.length), total: MUN_IDS.length, at: null });
       }
-      if (!alive()) return;
-      setMunWinners(out);
+      setMunWinners((prev) => ({ ...prev, ...out }));
       setMunMeta({ done: MUN_IDS.length, total: MUN_IDS.length, at: new Date().toLocaleTimeString('pt-BR') });
       setError(null);
     } catch (e: unknown) {
       setError(String((e as Error)?.message || e));
+    } finally {
+      inFlightRef.current = false;
+      setLoading(false);
+      const queued = queuedNumsRef.current;
+      queuedNumsRef.current = null;
+      if (queued) void fetchMun(queued);
     }
   }, []);
 
   const topKey = (topNumeros || []).join('|');
   const refetch = useCallback(async (): Promise<void> => {
-    setLoading(true);
     await fetchMun(topKey ? topKey.split('|') : []);
-    setLoading(false);
   }, [fetchMun, topKey]);
 
   useEffect(() => {
     if (!enabled) return;
     if (!topKey) return;
-    setLoading(true);
-    fetchMun(topKey.split('|')).finally(() => setLoading(false));
-  }, [enabled, topKey, fetchMun]);
+    void refetch();
+  }, [enabled, topKey, refetch]);
 
   return { munWinners, munMeta, meta: munMeta, error, loading, refetch };
 };

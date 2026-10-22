@@ -27,14 +27,24 @@ export const useUfRacesFindAll = (topNumeros: string[], enabled: boolean) => {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Geração do passe: varreduras sobrepostas (StrictMode, intervalo de 60s,
-  // topKey novo) resolvem por último-vencedor — só a geração atual commita (M3).
-  const genRef = useRef(0);
+  // Um passe por vez. Antes, o tick de 60 s (ou um topKey novo) iniciava outro
+  // passe e invalidava o anterior — se um passe demorasse mais que o intervalo,
+  // nenhum chegava ao commit e o mapa nunca atualizava. Agora o passe em voo
+  // termina e commita; só uma mudança real dos finalistas entra na fila.
+  const inFlightRef = useRef(false);
+  const runningKeyRef = useRef('');
+  const queuedNumsRef = useRef<string[] | null>(null);
 
   const fetchUFs = useCallback(async (nums: string[]): Promise<void> => {
-    const gen = genRef.current + 1;
-    genRef.current = gen;
-    const alive = (): boolean => gen === genRef.current;
+    const key = nums.join('|');
+    if (inFlightRef.current) {
+      // Tick com os mesmos finalistas é ruído; outro conjunto roda em seguida.
+      if (key !== runningKeyRef.current) queuedNumsRef.current = nums;
+      return;
+    }
+    inFlightRef.current = true;
+    runningKeyRef.current = key;
+    setLoading(true);
     // Colore cada UF pelo vencedor entre os 2 finalistas (ou líder local se 2T ainda sem ele próprio)
     try {
       const out: Record<string, UFWinner> = {};
@@ -78,33 +88,37 @@ export const useUfRacesFindAll = (topNumeros: string[], enabled: boolean) => {
             }
           }),
         );
-        const done = Math.min(i + 4, UFS.length);
-        if (!alive()) return;
-        setUfMeta({ done, total: UFS.length, at: null });
+        // Commit incremental: o mapa preenche lote a lote e um passe
+        // interrompido não descarta o que já foi lido.
+        setUfWinners((prev) => ({ ...prev, ...out }));
+        setUfStats((prev) => ({ ...prev, ...stats }));
+        setUfMeta({ done: Math.min(i + 4, UFS.length), total: UFS.length, at: null });
       }
-      if (!alive()) return;
-      setUfWinners(out);
-      setUfStats(stats);
+      setUfWinners((prev) => ({ ...prev, ...out }));
+      setUfStats((prev) => ({ ...prev, ...stats }));
       setUfMeta({ done: UFS.length, total: UFS.length, at: new Date().toLocaleTimeString('pt-BR') });
       setError(null);
     } catch (e: unknown) {
       setError(String((e as Error)?.message || e));
+    } finally {
+      inFlightRef.current = false;
+      setLoading(false);
+      const queued = queuedNumsRef.current;
+      queuedNumsRef.current = null;
+      if (queued) void fetchUFs(queued);
     }
   }, []);
 
   const topKey = (topNumeros || []).join('|');
   const refetch = useCallback(async (): Promise<void> => {
-    setLoading(true);
     await fetchUFs(topKey ? topKey.split('|') : []);
-    setLoading(false);
   }, [fetchUFs, topKey]);
 
   useEffect(() => {
     if (!enabled) return;
     if (!topKey) return;
-    setLoading(true);
-    fetchUFs(topKey.split('|')).finally(() => setLoading(false));
-  }, [enabled, topKey, fetchUFs]);
+    void refetch();
+  }, [enabled, topKey, refetch]);
 
   const data: Record<string, UFWinner> = ufWinners;
   return { data, ufWinners, ufStats, ufMeta, meta: ufMeta, error, loading, refetch };

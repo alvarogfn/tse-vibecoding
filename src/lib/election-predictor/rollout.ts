@@ -5,6 +5,21 @@ import { buildFeatureVector, clampPct } from '@/lib/election-predictor/features.
 
 export const ROLLOUT_SLICES = 1000;
 
+/**
+ * Cede a main thread sem depender de requestAnimationFrame. Em aba de fundo
+ * (ou janela ocluída) o rAF do `tf.nextFrame()` pode ficar congelado e a
+ * projeção inteira nunca termina; o timeout de 16ms garante o yield mesmo
+ * assim (e vence a corrida quando há paint).
+ */
+async function yieldFrame(tf: TfModule): Promise<void> {
+  await Promise.race([
+    tf.nextFrame(),
+    new Promise<void>((resolve) => {
+      setTimeout(resolve, 16);
+    }),
+  ]);
+}
+
 export interface RolloutUf {
   uf: string;
   counted: number;
@@ -65,7 +80,7 @@ export async function rollout(
     }
     if (i % 25 === 0) {
       if (shouldAbort?.()) return null; // superseded — caller stays silent.
-      await tf.nextFrame(); // cede a main thread (sem jank no gráfico).
+      await yieldFrame(tf); // cede a main thread (sem jank no gráfico).
     }
   }
   // Bottom-up por fatia: Σ(curva × peso)/Σ(pesos) — a nacional flutua junto.

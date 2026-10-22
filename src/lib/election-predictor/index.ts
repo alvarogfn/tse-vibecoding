@@ -144,6 +144,16 @@ interface PreparedUf {
   share: number | null;
 }
 
+/**
+ * Já existe voto apurado? Aos 0,00% o modelo só tem priors — projetar seria
+ * inventar resultado. Mantém o card em `idle` ("Aguardando início…") e os
+ * mapas cinza até a primeira urna.
+ */
+function hasAnyCount(ufs: ReadonlyArray<PredictorUfInput>, nationalCounted: number | null | undefined): boolean {
+  if (clampCounted(nationalCounted ?? 0) > 0) return true;
+  return ufs.some((u) => clampCounted(u.counted) > 0);
+}
+
 function prepareUf(input: PredictorUfInput): PreparedUf {
   const counted = clampCounted(input.counted);
   const rawShare = cleanShare(input.lulaShare);
@@ -449,6 +459,12 @@ export function pushPredictorInputs(inputs: PredictorInputs): void {
   if (key === lastInputsKey) return;
   lastInputsKey = key;
   lastSanitized = sanitized;
+  // 0,00% apurado: nada apurado ainda — idle, sem rollout nem projeção.
+  if (!hasAnyCount(ufs, inputs.nationalCounted)) {
+    runId += 1; // invalidate any in-flight recompute.
+    setSnapshot({ status: 'idle', series: [], updatedAt: null, error: null, note: null, phase: null });
+    return;
+  }
   const myRun = runId + 1;
   runId = myRun;
   // Keep the previous series visible while the new pass computes.
@@ -469,8 +485,9 @@ export function retrainPredictorFromScratch(): void {
   const myRun = runId + 1;
   runId = myRun;
   lastInputsKey = null;
-  // Sem dados ainda: nada p/ retreinar — idle em vez de loading travado (N14).
-  if (lastSanitized == null) {
+  // Sem dados ainda (ou 0,00% apurado): nada p/ retreinar — idle em vez de
+  // loading travado (N14).
+  if (lastSanitized == null || !hasAnyCount(lastSanitized.ufs, lastSanitized.nationalCounted)) {
     setSnapshot({ status: 'idle', series: [], updatedAt: null, error: null, note: null, phase: null });
     return;
   }

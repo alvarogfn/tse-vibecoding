@@ -290,11 +290,30 @@ export function fotoUrl(race: RaceInput, sqcand: string | number): string {
   return `https://resultados.tse.jus.br/oficial/${race.ciclo}/${race.ele}/fotos/${race.ufFoto}/${sqcand}.jpeg`
 }
 
-export async function fetchRaceJson(url: string): Promise<TseRawPayload> {
-  const sep = url.includes('?') ? '&' : '?';
-  const res = await fetch(url + `${sep}t=${Date.now()}`, { cache: 'no-store' })
-  if (!res.ok) throw new HttpError(`HTTP ${res.status}`, res.status)
-  return decodeJwsPayload(await res.text())
+/**
+ * Teto por requisição. Sob carga do TSE uma resposta pode ficar pendurada
+ * indefinidamente; sem timeout ela travaria a varredura inteira (27/853
+ * arquivos) e, com o commit no fim do passe, nada seria publicado.
+ */
+const RACE_TIMEOUT_MS = 15_000
+
+export async function fetchRaceJson(url: string, timeoutMs = RACE_TIMEOUT_MS): Promise<TseRawPayload> {
+  const sep = url.includes('?') ? '&' : '?'
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetch(url + `${sep}t=${Date.now()}`, { cache: 'no-store', signal: controller.signal })
+    if (!res.ok) throw new HttpError(`HTTP ${res.status}`, res.status)
+    return decodeJwsPayload(await res.text())
+  } catch (err) {
+    // AbortError é opaco; troca por uma mensagem que diga o que aconteceu.
+    if (controller.signal.aborted) {
+      throw new HttpError(`tempo esgotado após ${Math.round(timeoutMs / 1000)}s`, 408)
+    }
+    throw err
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 // Achata carg/agr/par/cand -> lista de candidatos (+ partidos, vagas, QE)

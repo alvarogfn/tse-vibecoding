@@ -10,7 +10,11 @@
     "preview": "vite preview",
     "deploy": "gh-pages -d dist",
     "test": "node --test scripts/structural-prior.test.mjs",
-    "backtest:prior": "node scripts/backtest-prior.ts"
+    "backtest:prior": "node scripts/backtest-prior.ts",
+    "typecheck:scripts": "tsc -p tsconfig.scripts.json --noEmit"
+  },
+  "engines": {
+    "node": ">=22.6"
   },
   "dependencies": {
     "@tensorflow/tfjs": "^4.22.0",

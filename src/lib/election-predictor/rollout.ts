@@ -2,6 +2,7 @@ import type * as tfTypes from '@tensorflow/tfjs';
 import type { TfModule } from '@/lib/election-predictor/analytic-model.js';
 import { predictRaw01Batch } from '@/lib/election-predictor/analytic-model.js';
 import { buildFeatureVector, clampPct } from '@/lib/election-predictor/features.js';
+import type { FeatureContext } from '@/lib/election-predictor/features.js';
 
 export const ROLLOUT_SLICES = 1000;
 
@@ -26,6 +27,8 @@ export interface RolloutUf {
   share: number | null;
   /** Prior estrutural final (alvo em 100%); substitui o share como âncora. */
   target: number;
+  /** Features externas (1T dinâmico/final, pesquisas, lean) no `counted` x. */
+  featureContext: (counted: number) => FeatureContext;
   weight: number;
 }
 
@@ -39,7 +42,7 @@ export interface RolloutResult {
 /**
  * Rollout autorregressivo: o modelo prevê cada uma das 1000 fatias do % restante,
  * realimentado com a própria previsão anterior (share_{t+1} = f(share_t)).
- * Batch único [nUf, 30] por fatia ⇒ 1000 inferências totais (não 27×1000).
+ * Batch único [nUf, 34] por fatia ⇒ 1000 inferências totais (não 27×1000).
  * `await tf.nextFrame()` a cada 25 fatias cede a main thread (sem jank).
  * O endpoint é o `target` estrutural (1T + pesquisas); a rede só modula a
  * trajetória e o resíduo decai a zero em x=100. Não é mais uma reta até o
@@ -66,6 +69,7 @@ export async function rollout(
         share: states[k] ?? u.target,
         anchor: u.target,
         uf: u.uf,
+        context: u.featureContext(x),
       });
     });
     const raws = predictRaw01Batch(tf, model, batch);

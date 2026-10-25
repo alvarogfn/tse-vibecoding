@@ -137,8 +137,12 @@ export interface StructuralPrior {
   readonly blendSpan: number;
   /** Duelo 1T da UF; null se a UF não existe no prior. */
   ufDuel(uf: string): number | null;
+  /** Poll estadual agregado da UF; null quando não há poll local. */
+  ufPollAvg(uf: string): number | null;
   /** Prior 2T da UF (duel 1T + delta); null se a UF não existe. */
   ufAnchor(uf: string): number | null;
+  /** Curva nacional do 1T normalizada no `counted` (0–100). */
+  curveAt(counted: number): number;
   /** Correção azul no percentual apurado c (1T final - curva 1T em c). */
   biasAt(counted: number): number;
   /** Projeta uma UF em um snapshot; null se a UF não existe no prior. */
@@ -337,6 +341,13 @@ export function buildStructuralPrior(input: StructuralPriorInput): StructuralPri
 
   const ufDuel = (uf: string): number | null => byUf.get(normalizeUf(uf))?.duel ?? null;
 
+  const ufPollAvg = (uf: string): number | null => pollsByUf.get(normalizeUf(uf)) ?? null;
+
+  const curveAt = (counted: number): number => {
+    const x = isFiniteNumber(counted) ? clampPct(counted) : 0;
+    return curve.length > 0 ? interpolateCurve(curve, x) : nationalFinalDuel;
+  };
+
   const ufAnchor = (uf: string): number | null => {
     const row = byUf.get(normalizeUf(uf));
     if (!row) return null;
@@ -418,7 +429,9 @@ export function buildStructuralPrior(input: StructuralPriorInput): StructuralPri
     statePollWeight,
     blendSpan,
     ufDuel,
+    ufPollAvg,
     ufAnchor,
+    curveAt,
     biasAt,
     project,
     projectAll,

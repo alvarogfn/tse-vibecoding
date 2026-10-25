@@ -3,11 +3,12 @@ import type { TfModule } from '@/lib/election-predictor/analytic-model.js';
 import { buildAnalyticModel, compileModel } from '@/lib/election-predictor/analytic-model.js';
 import { toDataset } from '@/lib/election-predictor/dataset.js';
 import type { TrainRow } from '@/lib/election-predictor/dataset.js';
+import { INPUT_DIM } from '@/lib/election-predictor/features.js';
 
-// v5: entrada com one-hot da UF (dim 6→30) — pesos v4 incompatíveis.
-// O modelo nasce dos priors analíticos e só aprende com os snapshots
-// da apuração.
-const IDB_URL = 'indexeddb://election-predictor-v5';
+// v6: entrada com 7 features do doc + one-hot UF (dim 34). Pesos v5 (dim 30)
+// são incompatíveis e viram órfãos. O modelo nasce dos priors analíticos e só
+// aprende com os snapshots da apuração.
+const IDB_URL = 'indexeddb://election-predictor-v6';
 const ONLINE_EPOCHS = 5;
 
 let cached: tfTypes.LayersModel | null = null;
@@ -21,6 +22,14 @@ let provenance = 'novo';
 /** Origem dos pesos em uso (p/ diagnóstico visível no card). */
 export function modelProvenance(): string {
   return provenance;
+}
+
+/** Checkpoints antigos (30 features) não podem ser usados com 34. */
+function assertInputDim(model: tfTypes.LayersModel): void {
+  const dim = model.inputs[0]?.shape?.[1];
+  if (dim != null && dim !== INPUT_DIM) {
+    throw new Error(`checkpoint com ${dim} features; esperado ${INPUT_DIM}`);
+  }
 }
 
 /**
@@ -38,6 +47,7 @@ export async function ensureModel(tf: TfModule): Promise<tfTypes.LayersModel> {
         'indexeddb://election-predictor-v2',
         'indexeddb://election-predictor-v3',
         'indexeddb://election-predictor-v4',
+        'indexeddb://election-predictor-v5',
       ]) {
         try {
           await tf.io.removeModel(url);
@@ -49,6 +59,7 @@ export async function ensureModel(tf: TfModule): Promise<tfTypes.LayersModel> {
   }
   try {
     cached = await tf.loadLayersModel(IDB_URL);
+    assertInputDim(cached);
     // Pesos persistidos vêm SEM optimizer: recompilar antes de qualquer
     // fine-tune (senão fitDataset lança e o preditor morre no 1º snapshot).
     compileModel(tf, cached);
@@ -59,6 +70,7 @@ export async function ensureModel(tf: TfModule): Promise<tfTypes.LayersModel> {
   }
   try {
     cached = await tf.loadLayersModel(`${import.meta.env.BASE_URL}models/predictor/model.json`);
+    assertInputDim(cached);
     compileModel(tf, cached);
     provenance = 'checkpoint';
     return cached;

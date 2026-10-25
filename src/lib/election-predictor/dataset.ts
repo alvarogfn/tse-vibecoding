@@ -1,5 +1,6 @@
 import type { TfModule } from '@/lib/election-predictor/analytic-model.js';
 import { buildFeatureVector } from '@/lib/election-predictor/features.js';
+import type { FeatureContext } from '@/lib/election-predictor/features.js';
 
 export interface TrainRow {
   xs: number[];
@@ -21,6 +22,7 @@ export interface SessionPoint {
 export function onlineRows(
   series: ReadonlyMap<string, SessionPoint[]>,
   targetByUf?: ReadonlyMap<string, number>,
+  contextFor?: (uf: string, counted: number) => FeatureContext,
   perUfCap = 10,
 ): TrainRow[] {
   const rows: TrainRow[] = [];
@@ -39,6 +41,7 @@ export function onlineRows(
           share,
           anchor: target,
           uf,
+          context: contextFor?.(uf, p.counted),
         }),
         ys: [Math.min(1, Math.max(0, target / 100))],
       });

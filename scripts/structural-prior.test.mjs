@@ -56,6 +56,9 @@ test('prior: correção azul interpola e zera em 100%', () => {
   close(prior.biasAt(55), 3.75, 'viés em 55');
   close(prior.biasAt(100), 0, 'viés em 100');
   close(prior.biasAt(150), 0, 'viés acima de 100');
+  close(prior.curveAt(0), 30, 'curva em 0');
+  close(prior.curveAt(55), 33.75, 'curva em 55');
+  close(prior.curveAt(100), 37.5, 'curva em 100');
 });
 
 test('prior: normaliza o nível da curva para o duelo bottom-up', () => {
@@ -127,6 +130,8 @@ test('prior: poll estadual entra com shrinkage e peso configurável', () => {
   close(blended.statePollWeight, 0.5, 'peso default');
   close(blended.ufAnchor('AA'), 66.75, 'âncora AA com shrinkage');
   close(blended.ufAnchor('BB'), 33.5, 'âncora BB com delta nacional');
+  close(blended.ufPollAvg('AA') ?? NaN, 70, 'poll local AA');
+  assert.equal(blended.ufPollAvg('BB'), null);
 
   const full = buildStructuralPrior(
     baseInput({ pollsByUf: { AA: 70 }, statePollWeight: 1 }),

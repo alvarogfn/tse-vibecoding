@@ -2,7 +2,7 @@
  * election-predictor — real-time electoral projection (TensorFlow.js, client-side).
  *
  * Pipeline:
- *  1. Per-UF dense feedforward (counted + share + anchor + UF one-hot → sigmoid).
+ *  1. Per-UF dense feedforward (7 features do doc + UF one-hot → sigmoid).
  *  2. Residual-delta-swing vs structural anchor + stabilization blend
  *     `alpha = min(1, counted/60)` toward the anchor
  *     (anchor = share observado ?? 50 — mesma definição no treino e na
@@ -33,6 +33,7 @@ import {
   pastelOf,
 } from '@/lib/election-predictor/colors.js';
 import { clampCounted, clampPct, cleanShare, resolveAnchor, weightOf } from '@/lib/election-predictor/features.js';
+import type { FeatureContext } from '@/lib/election-predictor/features.js';
 import type { TfModule } from '@/lib/election-predictor/analytic-model.js';
 import { ensureModel, fineTuneModel, resetSavedModel, modelProvenance } from '@/lib/election-predictor/training.js';
 import { onlineRows } from '@/lib/election-predictor/dataset.js';
@@ -133,6 +134,25 @@ async function ensureStructuralPrior(): Promise<StructuralPrior | null> {
     })();
   }
   return priorLoading;
+}
+
+/**
+ * Features do doc que dependem de fonte externa. `dynamic1T` usa a curva
+ * nacional como proxy; `viabilidade_historica_pt` é o lean estrutural
+ * (final 1T da UF vs share nacional) até existir a série de 4 eleições.
+ */
+function featureContextFor(
+  prior: StructuralPrior | null,
+  uf: string,
+  counted: number,
+): FeatureContext {
+  const fallback = prior?.ufAnchor(uf) ?? 50;
+  return {
+    dynamic1T: prior?.curveAt(counted) ?? fallback,
+    final1T: prior?.ufDuel(uf) ?? fallback,
+    pollAvg: prior?.ufPollAvg(uf) ?? prior?.pollMean ?? fallback,
+    nationalShare1T: prior?.nationalShare1T ?? fallback,
+  };
 }
 
 function setSnapshot(next: PredictorSnapshot): void {
@@ -396,7 +416,13 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
     const targetByUf = new Map(
       prepared.map((p) => [p.input.uf.toLowerCase(), p.target] as const),
     );
-    await fineTuneModel(tf, model, onlineRows(sessionSeries, targetByUf));
+    await fineTuneModel(
+      tf,
+      model,
+      onlineRows(sessionSeries, targetByUf, (uf, counted) =>
+        featureContextFor(prior, uf, counted),
+      ),
+    );
     if (myRun !== runId) return;
 
     // Rollout: o modelo prevê cada uma das 1000 fatias do % restante por UF;
@@ -411,6 +437,8 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
           counted: p.counted,
           share: p.share,
           target: p.target,
+          featureContext: (counted: number) =>
+            featureContextFor(prior, p.input.uf, counted),
           weight: p.weight,
         })),
         ROLLOUT_SLICES,

@@ -2,7 +2,7 @@
  * election-predictor/analytic-model — TensorFlow.js topology + weight priors.
  *
  * Topology (per repo doc, "Definição das Camadas do Modelo Preditivo"):
- * dense feedforward (counted + share + anchor + UF one-hot) → ReLU hidden
+ * dense feedforward (7 features do doc + UF one-hot) → ReLU hidden
  * layers (16 → 12 → 8) → 1 sigmoid neuron predicting the final Lula share
  * Compiled with Adam + MSE at build time, matching the doc's prescription.
  * Training happens in `training.ts` (fine-tune online on 2T session snapshots

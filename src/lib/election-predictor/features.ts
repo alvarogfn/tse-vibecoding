@@ -90,6 +90,9 @@ export function buildFeatureVector(args: FeatureArgs): number[] {
 export function weightOf(eleitorado: number, validos: number): number {
   const e = Number.isFinite(eleitorado) && eleitorado > 0 ? eleitorado : 0;
   const v = Number.isFinite(validos) && validos > 0 ? validos : 0;
-  const w = e || v;
+  // O doc agrega por votos válidos estimados (V_uf), não por eleitorado
+  // registrado: o eleitorado inclui abstenção e distorce a média dos shares.
+  // Só cai no eleitorado quando o TSE ainda não trouxe votos válidos.
+  const w = v || e;
   return w > 0 ? w : 0;
 }

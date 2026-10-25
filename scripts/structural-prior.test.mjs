@@ -42,6 +42,9 @@ test('prior: duelo nacional, delta e âncoras', () => {
   close(prior.nationalDelta, 3.5, 'delta nacional');
   close(prior.ufDuel('aa'), 60, 'duelo AA');
   close(prior.ufDuel('BB'), 30, 'duelo BB');
+  close(prior.ufValidVotes('AA') ?? NaN, 100, 'válidos AA');
+  close(prior.ufValidVotes('BB') ?? NaN, 300, 'válidos BB');
+  assert.equal(prior.ufValidVotes('ZZ'), null);
   close(prior.ufAnchor('AA'), 63.5, 'âncora AA');
   close(prior.ufAnchor('BB'), 33.5, 'âncora BB');
   assert.equal(prior.ufDuel('ZZ'), null);

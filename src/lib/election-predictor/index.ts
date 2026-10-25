@@ -21,6 +21,7 @@
  *   snapshots 2T da apuração (fine-tune online).
  */
 import { useSyncExternalStore } from 'react';
+import type { LayersModel } from '@tensorflow/tfjs';
 import {
   BR_FLAVIO_COLOR,
   BR_LULA_COLOR,
@@ -39,6 +40,9 @@ import { ensureModel, fineTuneModel, resetSavedModel, modelProvenance } from '@/
 import { onlineRows } from '@/lib/election-predictor/dataset.js';
 import { loadSnapshotSeries, saveSnapshotSeries } from '@/lib/election-predictor/snapshots.js';
 import { rollout, ROLLOUT_SLICES } from '@/lib/election-predictor/rollout.js';
+import type { RolloutResult } from '@/lib/election-predictor/rollout.js';
+import { runRolloutInWorker } from '@/lib/election-predictor/rollout-worker-client.js';
+import type { PredictorWorkerUf, PredictorWorkerWeight } from '@/lib/election-predictor/predictor-worker-protocol.js';
 import { fetchStaticPriorInputs } from '@/lib/election-predictor/prior-data.js';
 import { buildStructuralPrior } from '@/lib/election-predictor/structural-prior.js';
 import type { StructuralPrior } from '@/lib/election-predictor/structural-prior.js';
@@ -222,7 +226,9 @@ function prepareUf(input: PredictorUfInput, prior: StructuralPrior | null): Prep
     counted,
     anchor: target,
     target,
-    weight: weightOf(input.eleitorado, input.validos),
+    // Peso estável do 1T: no começo do 2T só algumas UFs têm válidos parciais;
+    // misturar válidos parciais com eleitorado das demais distorcia a nacional.
+    weight: prior?.ufValidVotes(input.uf) ?? weightOf(input.eleitorado, input.validos),
     share,
   };
 }
@@ -307,6 +313,69 @@ function toErrorMessage(err: unknown): string {
   if (err instanceof Error && err.message.trim().length > 0) return err.message;
   const text = String(err);
   return text.trim().length > 0 ? text : 'Election predictor inference failed';
+}
+
+// ---------------------------------------------------------------------------
+// Rollout no Worker (payload puro; fallback Fail-Safe na main thread)
+// ---------------------------------------------------------------------------
+
+/**
+ * Serializa os pesos SEM matar o modelo: em tfjs-layers, `getWeights()`
+ * devolve `LayerVariable.read()`, que é o próprio tensor-variável (não uma
+ * cópia). Um `dispose()` explícito aqui descartaria os pesos vivos e a
+ * inferência seguinte falharia com "kernel is already disposed". `tf.tidy()`
+ * não descarta Variáveis (por design) e limpa qualquer tensor temporário.
+ */
+function serializeModelWeights(tf: TfModule, model: LayersModel): PredictorWorkerWeight[] {
+  return tf.tidy(() =>
+    model.getWeights().map((tensor) => ({
+      shape: [...tensor.shape],
+      data: Array.from(tensor.dataSync()),
+    })),
+  );
+}
+
+/**
+ * Uma UF do Worker. Os estáticos vêm de `featureContextFor` (mesma fonte da
+ * main) e `curve` é a curva nacional normalizada do prior — sem dinâmica
+ * inventada por UF. `dynamic1T` é interpolado no Worker por `curveValueAt`.
+ */
+function workerUfFor(p: PreparedUf, prior: StructuralPrior | null): PredictorWorkerUf {
+  const context = featureContextFor(prior, p.input.uf, p.counted);
+  return {
+    uf: p.input.uf,
+    counted: p.counted,
+    share: p.share,
+    target: p.target,
+    weight: p.weight,
+    curve: prior?.curvePoints ?? [],
+    final1T: context.final1T,
+    pollAvg: context.pollAvg,
+    nationalShare1T: context.nationalShare1T,
+  };
+}
+
+/**
+ * Tenta o Worker. `null` = indisponível/falhou/pedido substituído; o chamador
+ * decide (fallback na main) depois de validar `runId`.
+ */
+async function rolloutInWorker(
+  tf: TfModule,
+  model: LayersModel,
+  prepared: PreparedUf[],
+  prior: StructuralPrior | null,
+): Promise<RolloutResult | null> {
+  try {
+    return await runRolloutInWorker({
+      weights: serializeModelWeights(tf, model),
+      ufs: prepared.map((p) => workerUfFor(p, prior)),
+      slices: ROLLOUT_SLICES,
+      curveFallback: prior?.nationalFinalDuel ?? 50,
+    });
+  } catch {
+    // Fail-Safe: serialização/ponte quebrada não impede a projeção na main.
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -427,8 +496,14 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
 
     // Rollout: o modelo prevê cada uma das 1000 fatias do % restante por UF;
     // a nacional é o bottom-up por fatia (flutua junto, sem falácia ecológica).
+    // O Worker recebe os pesos recém-treinados + UFs já preparadas. Se ele não
+    // estiver disponível (SSR, CSP, crash, timeout), a MESMA chamada de rollout
+    // roda na main thread — sem mudar alvo, prior ou features.
     setPhase('projetando 1000 fatias…');
-    const { curves, nationalLula, nationalFlavio } =
+    const workerResult = await rolloutInWorker(tf, model, prepared, prior);
+    if (myRun !== runId) return; // superseded — last push wins, no notify.
+    const result =
+      workerResult ??
       (await rollout(
         tf,
         model,
@@ -443,8 +518,9 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
         })),
         ROLLOUT_SLICES,
         () => myRun !== runId,
-      )) ?? { curves: [], nationalLula: [], nationalFlavio: [] };
-    if (myRun !== runId) return; // superseded — last push wins, no notify.
+      ));
+    if (myRun !== runId || !result) return;
+    const { curves, nationalLula, nationalFlavio } = result;
 
     const natCounted = clampCounted(sanitized.nationalCounted);
     const natRaw = cleanShare(sanitized.nationalShare);

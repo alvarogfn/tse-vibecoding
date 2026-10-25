@@ -139,8 +139,20 @@ export interface StructuralPrior {
   ufDuel(uf: string): number | null;
   /** Poll estadual agregado da UF; null quando não há poll local. */
   ufPollAvg(uf: string): number | null;
+  /**
+   * Votos válidos do 1T na UF, usados como massa eleitoral ESTÁVEL no
+   * bottom-up. Não use os votos parciais do 2T: no início da apuração só
+   * algumas UFs têm válidos e a mistura parcial/eleitorado distorce a nacional.
+   */
+  ufValidVotes(uf: string): number | null;
   /** Prior 2T da UF (duel 1T + delta); null se a UF não existe. */
   ufAnchor(uf: string): number | null;
+  /**
+   * Curva nacional do 1T já normalizada e ordenada (mesma série usada por
+   * `curveAt`). Exposta para a inferência fora da main thread interpolar
+   * exatamente a mesma curva, sem reamostrar nem inventar dinâmica por UF.
+   */
+  readonly curvePoints: readonly FirstTurnCurvePoint[];
   /** Curva nacional do 1T normalizada no `counted` (0–100). */
   curveAt(counted: number): number;
   /** Correção azul no percentual apurado c (1T final - curva 1T em c). */
@@ -221,7 +233,7 @@ function normalizeCurve(
 }
 
 /** Interpolação linear com extrapolação plana nas pontas. */
-function interpolateCurve(curve: readonly CleanCurvePoint[], counted: number): number {
+function interpolateCurve(curve: readonly FirstTurnCurvePoint[], counted: number): number {
   const first = curve[0];
   if (!first) return 50;
   if (counted <= first.counted) return first.lulaDuel;
@@ -241,6 +253,20 @@ function interpolateCurve(curve: readonly CleanCurvePoint[], counted: number): n
     }
   }
   return last.lulaDuel;
+}
+
+/**
+ * Valor da curva no `counted` com a mesma sanitização de `curveAt`
+ * (não-finito → 0, clamp 0–100, `fallback` quando não há pontos).
+ * Exportada para o Web Worker reproduzir `featureContextFor` sem divergir.
+ */
+export function curveValueAt(
+  points: readonly FirstTurnCurvePoint[],
+  counted: number,
+  fallback: number,
+): number {
+  const x = isFiniteNumber(counted) ? clampPct(counted) : 0;
+  return points.length > 0 ? interpolateCurve(points, x) : fallback;
 }
 
 /** Média ponderada das pesquisas; ignora valores fora de 0–100. */
@@ -317,6 +343,11 @@ export function buildStructuralPrior(input: StructuralPriorInput): StructuralPri
     duelMass > 0 ? clampPct((100 * lulaMass) / duelMass) : nationalFinalDuel;
 
   const curve = normalizeCurve(input.firstTurnCurve, nationalFinalDuel);
+  // Cópia imutável: o Worker recebe a curva crua (normalizada) e não pode
+  // alterar a série usada por `curveAt`/`biasAt`.
+  const curvePoints: readonly FirstTurnCurvePoint[] = Object.freeze(
+    curve.map((point) => Object.freeze({ counted: point.counted, lulaDuel: point.lulaDuel })),
+  );
   const pollMean = meanPoll(input.polls ?? []);
   const nationalDelta = pollMean == null ? 0 : pollMean - nationalFinalDuel;
 
@@ -343,10 +374,13 @@ export function buildStructuralPrior(input: StructuralPriorInput): StructuralPri
 
   const ufPollAvg = (uf: string): number | null => pollsByUf.get(normalizeUf(uf)) ?? null;
 
-  const curveAt = (counted: number): number => {
-    const x = isFiniteNumber(counted) ? clampPct(counted) : 0;
-    return curve.length > 0 ? interpolateCurve(curve, x) : nationalFinalDuel;
+  const ufValidVotes = (uf: string): number | null => {
+    const row = byUf.get(normalizeUf(uf));
+    return row != null && row.validos > 0 ? row.validos : null;
   };
+
+  const curveAt = (counted: number): number =>
+    curveValueAt(curve, counted, nationalFinalDuel);
 
   const ufAnchor = (uf: string): number | null => {
     const row = byUf.get(normalizeUf(uf));
@@ -358,9 +392,8 @@ export function buildStructuralPrior(input: StructuralPriorInput): StructuralPri
   };
 
   const biasAt = (counted: number): number => {
-    const x = isFiniteNumber(counted) ? clampPct(counted) : 0;
     if (curve.length === 0) return 0;
-    return nationalFinalDuel - interpolateCurve(curve, x);
+    return nationalFinalDuel - curveValueAt(curve, counted, nationalFinalDuel);
   };
 
   const project = (live: LiveUfInput): StructuralProjection | null => {
@@ -430,7 +463,9 @@ export function buildStructuralPrior(input: StructuralPriorInput): StructuralPri
     blendSpan,
     ufDuel,
     ufPollAvg,
+    ufValidVotes,
     ufAnchor,
+    curvePoints,
     curveAt,
     biasAt,
     project,

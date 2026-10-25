@@ -1,0 +1,370 @@
+{
+  "meta": {
+    "source": "TSE",
+    "source_detail": "Tribunal Superior Eleitoral - Repositório de Dados Eleitorais, votação por partido por município e zona (votacao_partido_munzona), arquivos *_BR.csv do cargo Presidente, 1º turno",
+    "source_urls": [
+      "https://cdn.tse.jus.br/estatistica/sead/odsele/votacao_partido_munzona/votacao_partido_munzona_2010.zip",
+      "https://cdn.tse.jus.br/estatistica/sead/odsele/votacao_partido_munzona/votacao_partido_munzona_2014.zip",
+      "https://cdn.tse.jus.br/estatistica/sead/odsele/votacao_partido_munzona/votacao_partido_munzona_2018.zip",
+      "https://cdn.tse.jus.br/estatistica/sead/odsele/votacao_partido_munzona/votacao_partido_munzona_2022.zip"
+    ],
+    "elections": [
+      2010,
+      2014,
+      2018,
+      2022
+    ],
+    "metric": "PT presidential candidate share of valid votes, 1st round",
+    "units": "percentage points of valid votes (0-100)",
+    "candidates": {
+      "2010": {
+        "name": "Dilma Rousseff",
+        "party": "PT",
+        "number": 13
+      },
+      "2014": {
+        "name": "Dilma Rousseff",
+        "party": "PT",
+        "number": 13
+      },
+      "2018": {
+        "name": "Fernando Haddad",
+        "party": "PT",
+        "number": 13
+      },
+      "2022": {
+        "name": "Luiz Inácio Lula da Silva",
+        "party": "PT",
+        "number": 13
+      }
+    },
+    "generated_at": "2026-10-25",
+    "notes": "1º turno, cargo Presidente (CD_CARGO=1). Share = votos nominais válidos do candidato do PT / total de votos nominais válidos do cargo na UF. Exclui brancos/nulos, votos no exterior (SG_UF=ZZ) e, em 2010, votos em trânsito (SG_UF=VT), por não serem atribuíveis a uma UF. Colunas: QT_VOTOS_NOMINAIS em 2010/2014 e QT_VOTOS_NOMINAIS_VALIDOS em 2018/2022. Conferência independente: os mesmos totais foram reproduzidos a partir de votacao_candidato_munzona para SP, BA e RS nas quatro eleições (match exato). Totais nacionais de votos válidos conferem com o TSE: 2010=101.590.151, 2014=104.023.802, 2018=107.050.749, 2022=118.229.719. mean/std/min/max/values em pontos percentuais, arredondados a 4 casas; std amostral (n-1). Sem valores nulos: as 27 UFs têm as quatro eleições."
+  },
+  "ufs": {
+    "AC": {
+      "mean": 24.9225,
+      "std": 4.8285,
+      "min": 18.5334,
+      "max": 29.2622,
+      "values": {
+        "2010": 23.9236,
+        "2014": 27.9707,
+        "2018": 18.5334,
+        "2022": 29.2622
+      }
+    },
+    "AL": {
+      "mean": 50.5247,
+      "std": 4.8145,
+      "min": 44.75,
+      "max": 56.4985,
+      "values": {
+        "2010": 50.9185,
+        "2014": 49.932,
+        "2018": 44.75,
+        "2022": 56.4985
+      }
+    },
+    "AP": {
+      "mean": 44.227,
+      "std": 7.9632,
+      "min": 32.7724,
+      "max": 51.0823,
+      "values": {
+        "2010": 47.3801,
+        "2014": 51.0823,
+        "2018": 32.7724,
+        "2022": 45.6733
+      }
+    },
+    "AM": {
+      "mean": 52.3437,
+      "std": 10.2824,
+      "min": 40.3,
+      "max": 64.9846,
+      "values": {
+        "2010": 64.9846,
+        "2014": 54.5108,
+        "2018": 40.3,
+        "2022": 49.5792
+      }
+    },
+    "BA": {
+      "mean": 63.5159,
+      "std": 4.2492,
+      "min": 60.2827,
+      "max": 69.7266,
+      "values": {
+        "2010": 62.622,
+        "2014": 61.4322,
+        "2018": 60.2827,
+        "2022": 69.7266
+      }
+    },
+    "CE": {
+      "mean": 58.4016,
+      "std": 16.8838,
+      "min": 33.1238,
+      "max": 68.278,
+      "values": {
+        "2010": 66.2961,
+        "2014": 68.278,
+        "2018": 33.1238,
+        "2022": 65.9087
+      }
+    },
+    "DF": {
+      "mean": 25.8741,
+      "std": 10.9389,
+      "min": 11.8732,
+      "max": 36.8514,
+      "values": {
+        "2010": 31.738,
+        "2014": 23.0337,
+        "2018": 11.8732,
+        "2022": 36.8514
+      }
+    },
+    "ES": {
+      "mean": 33.7377,
+      "std": 7.027,
+      "min": 24.1987,
+      "max": 40.4005,
+      "values": {
+        "2010": 37.2512,
+        "2014": 33.1004,
+        "2018": 24.1987,
+        "2022": 40.4005
+      }
+    },
+    "GO": {
+      "mean": 33.9235,
+      "std": 9.1164,
+      "min": 21.8555,
+      "max": 42.2339,
+      "values": {
+        "2010": 42.2339,
+        "2014": 32.0898,
+        "2018": 21.8555,
+        "2022": 39.5147
+      }
+    },
+    "MA": {
+      "mean": 67.5764,
+      "std": 4.2747,
+      "min": 61.2614,
+      "max": 70.6456,
+      "values": {
+        "2010": 70.6456,
+        "2014": 69.5543,
+        "2018": 61.2614,
+        "2022": 68.8445
+      }
+    },
+    "MT": {
+      "mean": 35.4022,
+      "std": 7.9174,
+      "min": 24.7595,
+      "max": 42.9373,
+      "values": {
+        "2010": 42.9373,
+        "2014": 39.5232,
+        "2018": 24.7595,
+        "2022": 34.3889
+      }
+    },
+    "MS": {
+      "mean": 35.0656,
+      "std": 7.5295,
+      "min": 23.8669,
+      "max": 39.8569,
+      "values": {
+        "2010": 39.8569,
+        "2014": 37.4989,
+        "2018": 23.8669,
+        "2022": 39.0396
+      }
+    },
+    "MG": {
+      "mean": 41.5975,
+      "std": 9.5192,
+      "min": 27.6487,
+      "max": 48.2878,
+      "values": {
+        "2010": 46.9831,
+        "2014": 43.4706,
+        "2018": 27.6487,
+        "2022": 48.2878
+      }
+    },
+    "PA": {
+      "mean": 48.6765,
+      "std": 5.3637,
+      "min": 41.3935,
+      "max": 53.1674,
+      "values": {
+        "2010": 47.9278,
+        "2014": 53.1674,
+        "2018": 41.3935,
+        "2022": 52.2172
+      }
+    },
+    "PB": {
+      "mean": 54.6172,
+      "std": 7.7199,
+      "min": 45.4573,
+      "max": 64.206,
+      "values": {
+        "2010": 53.2091,
+        "2014": 55.5962,
+        "2018": 45.4573,
+        "2022": 64.206
+      }
+    },
+    "PR": {
+      "mean": 31.7903,
+      "std": 8.4737,
+      "min": 19.7044,
+      "max": 38.9425,
+      "values": {
+        "2010": 38.9425,
+        "2014": 32.5225,
+        "2018": 19.7044,
+        "2022": 35.9917
+      }
+    },
+    "PE": {
+      "mean": 55.0223,
+      "std": 10.0803,
+      "min": 44.2125,
+      "max": 65.2663,
+      "values": {
+        "2010": 61.7429,
+        "2014": 44.2125,
+        "2018": 48.8677,
+        "2022": 65.2663
+      }
+    },
+    "PI": {
+      "mean": 68.8331,
+      "std": 4.6579,
+      "min": 63.3955,
+      "max": 74.2525,
+      "values": {
+        "2010": 67.0886,
+        "2014": 70.5957,
+        "2018": 63.3955,
+        "2022": 74.2525
+      }
+    },
+    "RJ": {
+      "mean": 33.6861,
+      "std": 13.1002,
+      "min": 14.6947,
+      "max": 43.7636,
+      "values": {
+        "2010": 43.7636,
+        "2014": 35.6045,
+        "2018": 14.6947,
+        "2022": 40.6818
+      }
+    },
+    "RN": {
+      "mean": 53.9926,
+      "std": 9.7694,
+      "min": 41.1864,
+      "max": 62.9802,
+      "values": {
+        "2010": 51.7634,
+        "2014": 60.0405,
+        "2018": 41.1864,
+        "2022": 62.9802
+      }
+    },
+    "RS": {
+      "mean": 38.8068,
+      "std": 10.8565,
+      "min": 22.8059,
+      "max": 46.9462,
+      "values": {
+        "2010": 46.9462,
+        "2014": 43.1917,
+        "2018": 22.8059,
+        "2022": 42.2835
+      }
+    },
+    "RO": {
+      "mean": 32.9432,
+      "std": 10.1874,
+      "min": 20.3615,
+      "max": 41.6918,
+      "values": {
+        "2010": 40.7404,
+        "2014": 41.6918,
+        "2018": 20.3615,
+        "2022": 28.9791
+      }
+    },
+    "RR": {
+      "mean": 25.6963,
+      "std": 6.6743,
+      "min": 17.8498,
+      "max": 33.1747,
+      "values": {
+        "2010": 28.7156,
+        "2014": 33.1747,
+        "2018": 17.8498,
+        "2022": 23.0453
+      }
+    },
+    "SC": {
+      "mean": 28.5295,
+      "std": 9.8161,
+      "min": 15.1317,
+      "max": 38.7115,
+      "values": {
+        "2010": 38.7115,
+        "2014": 30.7385,
+        "2018": 15.1317,
+        "2022": 29.5364
+      }
+    },
+    "SP": {
+      "mean": 30.1061,
+      "std": 11.1655,
+      "min": 16.4177,
+      "max": 40.8867,
+      "values": {
+        "2010": 37.3125,
+        "2014": 25.8075,
+        "2018": 16.4177,
+        "2022": 40.8867
+      }
+    },
+    "SE": {
+      "mean": 54.1219,
+      "std": 7.1341,
+      "min": 47.6652,
+      "max": 63.8244,
+      "values": {
+        "2010": 47.6652,
+        "2014": 54.9063,
+        "2018": 50.0915,
+        "2022": 63.8244
+      }
+    },
+    "TO": {
+      "mean": 48.1769,
+      "std": 4.7131,
+      "min": 41.1243,
+      "max": 50.9778,
+      "values": {
+        "2010": 50.9778,
+        "2014": 50.2103,
+        "2018": 41.1243,
+        "2022": 50.3953
+      }
+    }
+  }
+}

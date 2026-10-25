@@ -44,10 +44,29 @@ function nationalsText(series: PredictorSeries[]): string | null {
 }
 
 // Cabeçalho do card + botão de retreino (usado nos 4 estados do snapshot).
-function PredictorTitle({ busy }: { busy: boolean }): React.JSX.Element {
+interface PredictorTitleProps {
+  busy: boolean;
+  zoom: boolean;
+  onToggleZoom: () => void;
+}
+
+function PredictorTitle({ busy, zoom, onToggleZoom }: PredictorTitleProps): React.JSX.Element {
   return (
     <div className="flex items-center gap-2">
       <div className="col-title flex-1">Previsão · 2º turno (TF.js)</div>
+      <label
+        className="flex items-center gap-1 text-[11px] text-zinc-400 cursor-pointer select-none whitespace-nowrap"
+        title="Zoom no trecho já apurado; desligado mostra 0–100%"
+      >
+        <input
+          type="checkbox"
+          aria-label="Zoom na apuração"
+          checked={zoom}
+          onChange={onToggleZoom}
+          className="accent-[#facc15] h-3.5 w-3.5 cursor-pointer"
+        />
+        Zoom
+      </label>
       <button
         type="button"
         className="btn-ghost-sm"
@@ -69,6 +88,9 @@ function PredictorTitle({ busy }: { busy: boolean }): React.JSX.Element {
 export function PredictorCard(): React.JSX.Element {
   const snapshot = useElectionPredictor();
   const busy = snapshot.status === 'loading';
+  // Zoom no trecho já apurado. Default ligado: com 0,25% apurado, o eixo
+  // 0–100 esmagaria a linha factual contra a borda esquerda.
+  const [zoom, setZoom] = useState(true);
   // Regiões visíveis (default: só as 2 nacionais). Um checkbox por região
   // em vez de um geral — 27 finas de uma vez poluem o gráfico.
   const [regions, setRegions] = useState<ReadonlySet<string>>(new Set());
@@ -111,30 +133,44 @@ export function PredictorCard(): React.JSX.Element {
   // trecho sólido = apurado, tracejado = projeção. Nacionais sempre visíveis.
   const datasets = useMemo<ChartDataset<'line', { x: number; y: number | null }[]>[]>(
     () =>
-      snapshot.series.map((s) => ({
-        label: s.label,
-        data: [...s.history, ...s.estimate].sort((a, b) => a.x - b.x).map((p) => ({ x: p.x, y: p.y })),
-        borderColor: s.color,
-        backgroundColor: s.color,
-        borderWidth: s.width,
-        tension: 0.4,
-        spanGaps: true,
-        pointRadius: 0,
-        pointHoverRadius: 3,
-        pointHitRadius: 8,
-        hidden: s.kind === 'uf' ? !isShown(s) : false,
-        segment: {
-          // A11y/contraste: o módulo entrega lightColor ≈35% alpha, que some no
-          // fundo escuro do card (#101010) — ex. o cinza UF vira ~#3a3a3e.
-          // Mantemos a cor sólida (contraste total) e o tracejado sozinho marca
-          // a projeção; o contrato do módulo segue intacto (só o Chart ignora
-          // lightColor aqui).
-          borderColor: (ctx) => (segStartX(ctx) >= s.counted ? s.color : undefined),
-          borderDash: (ctx) => (segStartX(ctx) >= s.counted ? [6, 4] : undefined),
-          // Só os estados têm linha fina (sólida e tracejada); as nacionais
-          // seguem grossas (5) nos dois trechos.
-        },
-      })),
+      snapshot.series.map((s) => {
+        // Separa o trecho factual do projetado com um gap explícito no ponto
+        // atual. Sem isso, o primeiro ponto do rollout bottom-up (que preenche
+        // as UFs ainda sem voto com o prior) liga no share nacional parcial do
+        // TSE e desenha uma queda diagonal enganosa.
+        const data =
+          s.history.length > 0
+            ? [
+                ...s.history,
+                { x: s.counted, y: null },
+                ...s.estimate.filter((point) => point.x > s.counted + 1e-9),
+              ]
+            : s.estimate;
+        return {
+          label: s.label,
+          data: data.sort((a, b) => a.x - b.x).map((p) => ({ x: p.x, y: p.y })),
+          borderColor: s.color,
+          backgroundColor: s.color,
+          borderWidth: s.width,
+          tension: 0.4,
+          spanGaps: false,
+          pointRadius: 0,
+          pointHoverRadius: 3,
+          pointHitRadius: 8,
+          hidden: s.kind === 'uf' ? !isShown(s) : false,
+          segment: {
+            // A11y/contraste: o módulo entrega lightColor ≈35% alpha, que some no
+            // fundo escuro do card (#101010) — ex. o cinza UF vira ~#3a3a3e.
+            // Mantemos a cor sólida (contraste total) e o tracejado sozinho marca
+            // a projeção; o contrato do módulo segue intacto (só o Chart ignora
+            // lightColor aqui).
+            borderColor: (ctx) => (segStartX(ctx) >= s.counted ? s.color : undefined),
+            borderDash: (ctx) => (segStartX(ctx) >= s.counted ? [6, 4] : undefined),
+            // Só os estados têm linha fina (sólida e tracejada); as nacionais
+            // seguem grossas (5) nos dois trechos.
+          },
+        };
+      }),
     [snapshot.series, regions],
   );
 
@@ -161,6 +197,14 @@ export function PredictorCard(): React.JSX.Element {
     if (!Number.isFinite(w) || !Number.isFinite(z)) return { min: 0, max: 100 };
     return { min: Math.max(0, Math.floor(w - 5)), max: Math.min(100, Math.ceil(z + 5)) };
   }, [snapshot.series, regions]);
+
+  // Apuração nacional corrente: o zoom acompanha o avanço e mantém o trecho
+  // apurado em ~1/3 da largura; acima de ~33% o gráfico já abre em 0–100.
+  const currentCounted = useMemo(() => {
+    const nat = snapshot.series.find((s) => s.kind === 'br-lula' || s.kind === 'br-flavio');
+    return nat?.counted ?? 0;
+  }, [snapshot.series]);
+  const xMax = zoom && currentCounted > 0 ? Math.min(100, Math.max(0.5, currentCounted * 3)) : 100;
 
   const options = useMemo<ChartOptions<'line'>>(
     () => ({
@@ -233,9 +277,19 @@ export function PredictorCard(): React.JSX.Element {
         x: {
           type: 'linear',
           min: 0,
-          max: 100,
-          title: { display: true, text: '% apuração', color: AXIS, font: { size: 11 } },
-          ticks: { font: { size: 10 }, maxTicksLimit: 6, color: AXIS, callback: (v: string | number) => `${v}%` },
+          max: xMax,
+          title: {
+            display: true,
+            text: xMax < 100 ? `% apuração · zoom 0–${fmtPct(xMax)}` : '% apuração',
+            color: AXIS,
+            font: { size: 11 },
+          },
+          ticks: {
+            font: { size: 10 },
+            maxTicksLimit: 6,
+            color: AXIS,
+            callback: (v: string | number) => fmtPct(Number(v)),
+          },
           grid: { color: GRID },
         },
         y: {
@@ -247,7 +301,7 @@ export function PredictorCard(): React.JSX.Element {
         },
       },
     }),
-    [snapshot.series, regions, yBounds, candNames],
+    [snapshot.series, regions, yBounds, candNames, xMax],
   );
 
   const ariaLabel = useMemo<string>(() => {
@@ -266,9 +320,18 @@ export function PredictorCard(): React.JSX.Element {
       `Apuração nacional ${counted}. ` +
       `${visible} de ${snapshot.series.length} séries visíveis. ` +
       `Eixo x: percentual de apuração. Eixo y: percentual de votos. ` +
-      `Linha sólida: apurado. Linha tracejada: projeção.`
+      `Linha sólida: apurado. Linha tracejada: projeção.` +
+      (xMax < 100 ? ` Zoom na apuração: eixo x de 0 a ${fmtPct(xMax)}.` : '')
     );
-  }, [snapshot, regions]);
+  }, [snapshot, regions, xMax]);
+
+  const titleNode = (
+    <PredictorTitle
+      busy={busy}
+      zoom={zoom}
+      onToggleZoom={() => setZoom((value) => !value)}
+    />
+  );
 
   // Gráfico sempre montado (mesmo sem dados): eixos 0–100 visíveis desde o
   // início; ao chegar a primeira urna os datasets entram sem remontar o card.
@@ -287,7 +350,7 @@ export function PredictorCard(): React.JSX.Element {
   if (snapshot.status === 'idle') {
     return (
       <>
-        <PredictorTitle busy={busy} />
+        {titleNode}
         <div className="summary" title="Previsão aguardando apuração" role="status">
           Aguardando início da apuração do 2º turno
         </div>
@@ -301,7 +364,7 @@ export function PredictorCard(): React.JSX.Element {
   if (snapshot.status === 'loading' && snapshot.series.length === 0) {
     return (
       <>
-        <PredictorTitle busy={busy} />
+        {titleNode}
         <div className="summary" title="Modelo de previsão carregando" role="status">
           Modelo de previsão carregando…
         </div>
@@ -313,7 +376,7 @@ export function PredictorCard(): React.JSX.Element {
   if (snapshot.status === 'error' && snapshot.series.length === 0) {
     return (
       <>
-        <PredictorTitle busy={busy} />
+        {titleNode}
         <div className="summary" title="Falha na previsão">
           Não foi possível gerar a previsão
         </div>
@@ -331,7 +394,7 @@ export function PredictorCard(): React.JSX.Element {
 
   return (
     <>
-      <PredictorTitle busy={busy} />
+      {titleNode}
       {snapshot.status === 'error' && (
         <div className="err" role="alert">
           {snapshot.error || 'Falha ao carregar previsão.'} — exibindo última projeção válida.
@@ -367,7 +430,11 @@ export function PredictorCard(): React.JSX.Element {
         </div>
       )}
       <div className="hint">
-        Atualizado às {at} · linha sólida = apurado · tracejada = projeção{snapshot.note ? ` · base ${snapshot.note}` : ''}
+        Atualizado às {at} · linha sólida = apurado · tracejada = projeção
+        {currentCounted > 0 && currentCounted < 100
+          ? ' · gap no ponto atual = TSE parcial × projeção bottom-up'
+          : ''}
+        {snapshot.note ? ` · base ${snapshot.note}` : ''}
         {recalculating && snapshot.phase ? ` · ${snapshot.phase}` : ''}
       </div>
     </>

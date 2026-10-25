@@ -33,6 +33,9 @@ export default function SegundoTurno(): React.JSX.Element {
   // sob `dados/mg/`; cada município pinta com o vencedor local entre os 2 finalistas.
   const { munWinners, munMeta, refetch: refetchMun } = useMgMunRacesFindAll(presTop2ForUf, ROUND2_LIVE && !!pres);
   const [auto, setAuto] = useState<boolean>(true);
+  // Default true = comportamento histórico (real + projeção). Desligado, os
+  // mapas/tooltips mostram só o apurado real do TSE.
+  const [showProjection, setShowProjection] = useState(true);
   const [hoverUF, setHoverUF] = useState<string | null>(null);
   const [hoverMun, setHoverMun] = useState<string | null>(null);
 
@@ -107,6 +110,12 @@ export default function SegundoTurno(): React.JSX.Element {
     return { colors, names };
   }, [predictorSeries, presTop2, presColors]);
 
+  // Com a projeção oculta, o tooltip do mapa não recebe nomes de projeção.
+  const projectedTooltips = useMemo(
+    () => (showProjection ? projected.names : {}),
+    [showProjection, projected.names],
+  );
+
   // Fail-Fast contract: inputs do preditor derivam do estado apurado; o push
   // propaga ao store TF.js e erros sobem ao ErrorBoundary (sem try/catch no meio).
   const predictorInputs = useMemo<PredictorInputs>(() => {
@@ -166,10 +175,10 @@ export default function SegundoTurno(): React.JSX.Element {
     (pathId: string): string => {
       if (!USE_ROUND2_GEO) return NO_DATA_GRAY;
       const uf = pathId.replace('BR-', '').toLowerCase();
-      // 1. vencedor real (com urna apurada); 2. projeção do modelo; 3. cinza.
-      return ufFillColors[uf] ?? projected.colors[uf] ?? NO_DATA_GRAY;
+      // 1. vencedor real (com urna apurada); 2. projeção do modelo (se visível); 3. cinza.
+      return ufFillColors[uf] ?? (showProjection ? projected.colors[uf] : undefined) ?? NO_DATA_GRAY;
     },
-    [ufFillColors, projected],
+    [ufFillColors, projected, showProjection],
   );
 
   // Cor de cada município pela margem do vencedor local; cinza sem dados do 2º turno.
@@ -199,6 +208,18 @@ export default function SegundoTurno(): React.JSX.Element {
         <Link className="btn-ghost-sm" to="/1-turno" style={{ textDecoration: 'none' }}>
           1º turno
         </Link>
+        <label
+          className="flex items-center gap-1 text-[11px] text-zinc-400 cursor-pointer select-none whitespace-nowrap"
+          title="Mostrar/ocultar a projeção do modelo; desligado mostra só o apurado real do TSE"
+        >
+          <input
+            type="checkbox"
+            checked={showProjection}
+            onChange={(e) => setShowProjection(e.target.checked)}
+            className="accent-[#facc15] h-3.5 w-3.5 cursor-pointer"
+          />
+          Projeção nos mapas
+        </label>
         <span className="badge">{!ROUND2_LIVE ? 'aguardando 2T' : loading ? 'lendo…' : auto ? 'auto 15s' : 'pausado'}</span>
         <button className="btn-ghost-sm" onClick={() => setAuto(!auto)}>
           {auto ? 'Pausar' : 'Retomar'}
@@ -248,12 +269,14 @@ export default function SegundoTurno(): React.JSX.Element {
                     if (USE_ROUND2_GEO && w && hasRealCount(w)) {
                       return `${uf.toUpperCase()} · ${w.nome} (${w.partido}) ${fmtPct(w.pvapNum)}`;
                     }
-                    const proj = projected.names[uf];
+                    const proj = showProjection ? projected.names[uf] : undefined;
                     return proj
                       ? `${uf.toUpperCase()} · projeção: ${proj}`
                       : `${uf.toUpperCase()} · sem dados do 2º turno`;
                   })()
-                : `Flávio Bolsonaro (azul) · Lula (vermelho) · sem dados (cinza) · ${projCount} UFs em projeção · ${ufMeta.done}/${ufMeta.total} arquivos${ufMeta.at ? ` · ${ufMeta.at}` : ''}`
+                : `Flávio Bolsonaro (azul) · Lula (vermelho) · sem dados (cinza) · ${
+                    showProjection ? `${projCount} UFs em projeção` : `${projCount} UFs com projeção (oculta)`
+                  } · ${ufMeta.done}/${ufMeta.total} arquivos${ufMeta.at ? ` · ${ufMeta.at}` : ''}`
             }
           >
             <CandLegend cands={presTop2Shown} colors={presColors} />
@@ -267,7 +290,7 @@ export default function SegundoTurno(): React.JSX.Element {
                   hoverId={hoverUF}
                   onHover={setHoverUF}
                   winners={ufWinners}
-                  projected={projected.names}
+                  projected={projectedTooltips}
                 />
               )}
             </div>

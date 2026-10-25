@@ -61,6 +61,7 @@ const isPctArray = (value: unknown): value is number[] =>
  * `status:'error'` no recompute.
  */
 function isValidResult(response: {
+  progress: unknown;
   curves: unknown;
   nationalLula: unknown;
   nationalFlavio: unknown;
@@ -73,6 +74,22 @@ function isValidResult(response: {
   }
   const length = response.nationalLula.length;
   if (length < 1 || length > entry.slices) return false;
+  if (!Array.isArray(response.progress) || response.progress.length !== length) {
+    return false;
+  }
+  let previous = 0;
+  for (const value of response.progress) {
+    if (
+      typeof value !== 'number' ||
+      !Number.isFinite(value) ||
+      value <= previous ||
+      value > 1
+    ) {
+      return false;
+    }
+    previous = value;
+  }
+  if (previous !== 1) return false;
   return response.curves.every(
     (curve) => isPctArray(curve) && curve.length === length,
   );
@@ -146,6 +163,7 @@ function createWorker(): Worker {
         return;
       }
       settle({
+        progress: response.progress,
         curves: response.curves,
         nationalLula: response.nationalLula,
         nationalFlavio: response.nationalFlavio,

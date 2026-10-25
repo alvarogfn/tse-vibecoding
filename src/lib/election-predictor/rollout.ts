@@ -3,14 +3,13 @@ import type { TfModule } from '@/lib/election-predictor/analytic-model.js';
 import { predictRaw01Batch } from '@/lib/election-predictor/analytic-model.js';
 import { buildFeatureVector, clampPct } from '@/lib/election-predictor/features.js';
 import type { FeatureContext } from '@/lib/election-predictor/features.js';
+import { buildProgressSchedule } from '@/lib/election-predictor/rollout-progress.js';
 
 /**
- * 2000 fatias = passo de 0,05 pp no restante. Benchmark contra referência de
- * 10.000 (0,25% e 10% apurados): 1000 tinha MAE ~0,09/0,02 pp, mas erro
- * máximo ~3 pp na primeira fatia e só ~5 pontos na janela de zoom de 0,25%.
- * 2000 corta o erro máximo para ~2,3/2,4 pp e dobra a resolução visível;
- * 4000 melhora para ~1,4 pp, mas custa ~6 s na main. 2000 é o equilíbrio
- * entre resolução, Worker (~2 s) e o timeout de 10 s.
+ * 2000 fatias com grade adaptativa (potência 2): densas perto da apuração
+ * atual, esparsas no fim, onde alpha=1 e o target já é exato. Isso evita o
+ * erro de ~3 pp da grade uniforme de 1000 na primeira fatia e ainda cabe no
+ * Worker (~2-3 s). Benchmark contra referência de 10.000 em `rollout-progress`.
  */
 export const ROLLOUT_SLICES = 2000;
 
@@ -41,6 +40,8 @@ export interface RolloutUf {
 }
 
 export interface RolloutResult {
+  /** progress[i] = fração (0,1] do restante; x = counted + (100-counted)*u. */
+  progress: number[];
   /** curves[k][i] = Lula share da UF k na fatia i (x em (counted, 100]). */
   curves: number[][];
   nationalLula: number[];
@@ -48,9 +49,10 @@ export interface RolloutResult {
 }
 
 /**
- * Rollout autorregressivo: o modelo prevê cada uma das 1000 fatias do % restante,
- * realimentado com a própria previsão anterior (share_{t+1} = f(share_t)).
- * Batch único [nUf, 34] por fatia ⇒ 1000 inferências totais (não 27×1000).
+ * Rollout autorregressivo: o modelo percorre fatias do % restante, realimentado
+ * com a própria previsão anterior (share_{t+1} = f(share_t)). A grade é
+ * adaptativa (ver `rollout-progress.ts`): densa perto do `counted`, esparsa no
+ * fim, onde alpha=1 e o target já é exato. Batch único [nUf, 34] por fatia.
  * `await tf.nextFrame()` a cada 25 fatias cede a main thread (sem jank).
  * O endpoint é o `target` estrutural (1T + pesquisas); a rede só modula a
  * trajetória e o resíduo decai a zero em x=100. Não é mais uma reta até o
@@ -66,12 +68,14 @@ export async function rollout(
   const n = ufs.length;
   const curves: number[][] = ufs.map(() => []);
   const states: number[] = ufs.map((u) => clampPct(u.share ?? u.target));
-  // Tudo apurado: 1 ponto terminal por UF (N11) — 1000 pontos empilhados em
-  // x=100 seriam overdraw puro + trabalho p/ tooltip/decimação.
+  // Tudo apurado: 1 ponto terminal por UF (N11) — milhares de pontos empilhados
+  // em x=100 seriam overdraw puro + trabalho p/ tooltip/decimação.
   const effSlices = ufs.length > 0 && ufs.every((u) => u.counted >= 100) ? 1 : slices;
-  for (let i = 1; i <= effSlices; i += 1) {
+  const progress = buildProgressSchedule(effSlices);
+  for (let i = 0; i < progress.length; i += 1) {
+    const step = progress[i] ?? 1;
     const batch = ufs.map((u, k) => {
-      const x = u.counted + ((100 - u.counted) * i) / effSlices;
+      const x = u.counted + (100 - u.counted) * step;
       return buildFeatureVector({
         counted: x,
         share: states[k] ?? u.target,
@@ -84,7 +88,7 @@ export async function rollout(
     for (let k = 0; k < n; k += 1) {
       const u = ufs[k];
       if (!u) continue;
-      const x = u.counted + ((100 - u.counted) * i) / effSlices;
+      const x = u.counted + (100 - u.counted) * step;
       const alpha = Math.min(1, x / 60);
       const target = clampPct(u.target);
       const current = states[k] ?? target;
@@ -99,14 +103,14 @@ export async function rollout(
       const curve = curves[k];
       if (curve) curve.push(next);
     }
-    if (i % 25 === 0) {
+    if ((i + 1) % 25 === 0) {
       if (shouldAbort?.()) return null; // superseded — caller stays silent.
       await yieldFrame(tf); // cede a main thread (sem jank no gráfico).
     }
   }
   // Bottom-up por fatia: Σ(curva × peso)/Σ(pesos) — a nacional flutua junto.
   const nationalLula: number[] = [];
-  for (let i = 0; i < effSlices; i += 1) {
+  for (let i = 0; i < progress.length; i += 1) {
     let tw = 0;
     let sw = 0;
     let sum = 0;
@@ -119,5 +123,10 @@ export async function rollout(
     }
     nationalLula.push(clampPct(tw > 0 ? sw / tw : sum / Math.max(1, n)));
   }
-  return { curves, nationalLula, nationalFlavio: nationalLula.map((v) => clampPct(100 - v)) };
+  return {
+    progress,
+    curves,
+    nationalLula,
+    nationalFlavio: nationalLula.map((v) => clampPct(100 - v)),
+  };
 }

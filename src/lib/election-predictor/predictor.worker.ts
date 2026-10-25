@@ -186,6 +186,7 @@ async function handle(request: PredictorWorkerRequest): Promise<void> {
     scope.postMessage({
       id,
       ok: true,
+      progress: result.progress,
       curves: result.curves,
       nationalLula: result.nationalLula,
       nationalFlavio: result.nationalFlavio,

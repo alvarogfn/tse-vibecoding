@@ -64,6 +64,7 @@ function responseFor(request, overrides = {}) {
   return {
     id: request.id,
     ok: true,
+    progress: [0.5, 1],
     curves: [[50, 50]],
     nationalLula: [50, 50],
     nationalFlavio: [50, 50],
@@ -187,6 +188,7 @@ test('worker client: pedido substituído cancela o anterior e usa o novo', async
 
     worker2.respond(
       responseFor(worker2.posted[0], {
+        progress: [0.5, 0.75, 1],
         curves: [[50, 51, 52]],
         nationalLula: [50, 51, 52],
         nationalFlavio: [50, 49, 48],

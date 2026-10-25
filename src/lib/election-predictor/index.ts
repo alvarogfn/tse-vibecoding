@@ -259,17 +259,30 @@ function anchorOf(prepared: PreparedUf[]): number {
   return clampPct(tw > 0 ? sw / tw : sum / Math.max(1, prepared.length));
 }
 
-/** Curva de N fatias → pontos {x, y} do counted (exclusive) até 100. */
-function curvePoints(counted: number, ys: number[]): PredictorPoint[] {
+/**
+ * Curva de N fatias → pontos {x, y}. `progress[i]` é a fração (0,1] do
+ * restante; sem progress (prior-only/legado), cai na grade uniforme.
+ */
+function curvePoints(
+  counted: number,
+  ys: number[],
+  progress?: readonly number[],
+): PredictorPoint[] {
   const n = ys.length;
-  return ys.map((y, i) => ({
-    x: n > 0 ? counted + ((100 - counted) * (i + 1)) / n : 100,
-    y: clampPct(y),
-  }));
+  return ys.map((y, i) => {
+    const fallback = n > 0 ? (i + 1) / n : 1;
+    const raw = progress?.[i] ?? fallback;
+    const u = Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : fallback;
+    return { x: counted + (100 - counted) * u, y: clampPct(y) };
+  });
 }
 
-/** Série de UF com projeção em 1000 fatias (flutuações do modelo, não reta). */
-function ufSeriesFromCurve(p: PreparedUf, ys: number[]): PredictorSeries {
+/** Série de UF com projeção em N fatias (flutuações do modelo, não reta). */
+function ufSeriesFromCurve(
+  p: PreparedUf,
+  ys: number[],
+  progress?: readonly number[],
+): PredictorSeries {
   // Cor pelo VENCEDOR PROJETADO (final da curva), nunca pelo vencedor aparente
   // da varredura: com poucas urnas apuradas o sweep empata no 0×0 e elegeria
   // sempre o 1º da lista (mapa/gráfico todo azul). Rosa = Lula ≥ 50 no fim.
@@ -282,14 +295,14 @@ function ufSeriesFromCurve(p: PreparedUf, ys: number[]): PredictorSeries {
     kind: 'uf',
     counted: p.counted,
     history: historyFor(p.counted, p.anchor, p.share),
-    estimate: [{ x: p.counted, y: start }, ...curvePoints(p.counted, ys)],
+    estimate: [{ x: p.counted, y: start }, ...curvePoints(p.counted, ys, progress)],
     color,
     lightColor: lightOf(color),
     width: UF_WIDTH,
   };
 }
 
-/** Série nacional com projeção em 1000 fatias (bottom-up por fatia). */
+/** Série nacional com projeção em N fatias (bottom-up por fatia). */
 function nationalSeriesFromCurve(
   id: 'br-flavio' | 'br-lula',
   label: 'Brasil · Flávio' | 'Brasil · Lula',
@@ -298,6 +311,7 @@ function nationalSeriesFromCurve(
   share: number | null,
   ys: number[],
   color: string,
+  progress?: readonly number[],
 ): PredictorSeries {
   const start = share != null ? clampPct(share) : clampPct(anchor);
   return {
@@ -306,7 +320,7 @@ function nationalSeriesFromCurve(
     kind: id,
     counted,
     history: historyFor(counted, anchor, share),
-    estimate: [{ x: counted, y: start }, ...curvePoints(counted, ys)],
+    estimate: [{ x: counted, y: start }, ...curvePoints(counted, ys, progress)],
     color,
     lightColor: lightOf(color),
     width: BR_WIDTH,
@@ -526,7 +540,7 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
         () => myRun !== runId,
       ));
     if (myRun !== runId || !result) return;
-    const { curves, nationalLula, nationalFlavio } = result;
+    const { progress, curves, nationalLula, nationalFlavio } = result;
 
     const natCounted = clampCounted(sanitized.nationalCounted);
     const natRaw = cleanShare(sanitized.nationalShare);
@@ -537,7 +551,7 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
     // UFs first, nationals last: Chart.js paints later datasets on top,
     // so the thick mains stay above the thin UF lines (H3).
     const series: PredictorSeries[] = [
-      ...prepared.map((p, i) => ufSeriesFromCurve(p, curves[i] ?? [])),
+      ...prepared.map((p, i) => ufSeriesFromCurve(p, curves[i] ?? [], progress)),
       nationalSeriesFromCurve(
         'br-flavio',
         'Brasil · Flávio',
@@ -546,6 +560,7 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
         flavioShare,
         nationalFlavio,
         BR_FLAVIO_COLOR,
+        progress,
       ),
       nationalSeriesFromCurve(
         'br-lula',
@@ -555,6 +570,7 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
         natShare,
         nationalLula,
         BR_LULA_COLOR,
+        progress,
       ),
     ];
 

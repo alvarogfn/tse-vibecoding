@@ -38,6 +38,9 @@ import { ensureModel, fineTuneModel, resetSavedModel, modelProvenance } from '@/
 import { onlineRows } from '@/lib/election-predictor/dataset.js';
 import { loadSnapshotSeries, saveSnapshotSeries } from '@/lib/election-predictor/snapshots.js';
 import { rollout, ROLLOUT_SLICES } from '@/lib/election-predictor/rollout.js';
+import { fetchStaticPriorInputs } from '@/lib/election-predictor/prior-data.js';
+import { buildStructuralPrior } from '@/lib/election-predictor/structural-prior.js';
+import type { StructuralPrior } from '@/lib/election-predictor/structural-prior.js';
 
 export interface PredictorPoint {
   x: number;
@@ -105,6 +108,33 @@ let runId = 0;
 /** Key of the last pushed inputs — identical inputs skip the pass (no chart rebuild). */
 let lastInputsKey: string | null = null;
 
+/**
+ * Prior estrutural 1T + pesquisas. Carregado uma vez do `public/`; se faltar
+ * qualquer JSON obrigatório, o preditor cai no comportamento antigo (share
+ * atual) em vez de quebrar a apuração.
+ */
+let structuralPrior: StructuralPrior | null = null;
+let priorLoading: Promise<StructuralPrior | null> | null = null;
+
+async function ensureStructuralPrior(): Promise<StructuralPrior | null> {
+  if (structuralPrior) return structuralPrior;
+  if (!priorLoading) {
+    priorLoading = (async (): Promise<StructuralPrior | null> => {
+      try {
+        const input = await fetchStaticPriorInputs({
+          base: import.meta.env.BASE_URL || '/',
+        });
+        structuralPrior = buildStructuralPrior(input);
+        return structuralPrior;
+      } catch {
+        priorLoading = null;
+        return null;
+      }
+    })();
+  }
+  return priorLoading;
+}
+
 function setSnapshot(next: PredictorSnapshot): void {
   current = next;
   version += 1;
@@ -139,7 +169,10 @@ function getServerSnapshot(): PredictorSnapshot {
 interface PreparedUf {
   input: PredictorUfInput;
   counted: number;
+  /** Prior estrutural final (1T + pesquisas); fallback = share ?? 50. */
   anchor: number;
+  /** Alvo explícito em x=100 (igual ao anchor; separado para o rollout). */
+  target: number;
   weight: number;
   share: number | null;
 }
@@ -154,19 +187,21 @@ function hasAnyCount(ufs: ReadonlyArray<PredictorUfInput>, nationalCounted: numb
   return ufs.some((u) => clampCounted(u.counted) > 0);
 }
 
-function prepareUf(input: PredictorUfInput): PreparedUf {
+function prepareUf(input: PredictorUfInput, prior: StructuralPrior | null): PreparedUf {
   const counted = clampCounted(input.counted);
   const rawShare = cleanShare(input.lulaShare);
   // 0 votos com 0% apurado = ausência de evidência, NÃO 0% de apoio.
   // Sem esse guarda a âncora colapsava a 0 e o gráfico cravava 100×0.
   const share = rawShare === 0 && counted <= 0 ? null : rawShare;
-  // Âncora: share observado ?? 50 (neutro). Mesma definição no treino
-  // (dataset.onlineRows) e na inferência — nunca diverge.
-  const anchor = resolveAnchor(share);
+  // Prior estrutural é o alvo final; sem prior, cai no comportamento antigo
+  // (share observado ?? 50) para nunca deixar a página sem projeção.
+  const priorTarget = prior?.ufAnchor(input.uf) ?? null;
+  const target = priorTarget ?? resolveAnchor(share);
   return {
     input,
     counted,
-    anchor,
+    anchor: target,
+    target,
     weight: weightOf(input.eleitorado, input.validos),
     share,
   };
@@ -309,9 +344,13 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
     const model = await ensureModel(tf);
     if (myRun !== runId) return;
 
+    setPhase('carregando prior 1T + pesquisas…');
+    const prior = await ensureStructuralPrior();
+    if (myRun !== runId) return;
+
     // Sequential Fail-Fast pass: first throw aborts this run; the catch
     // below converts it to the `error` snapshot (stale runs stay silent).
-    const prepared: PreparedUf[] = sanitized.ufs.map((u) => prepareUf(u));
+    const prepared: PreparedUf[] = sanitized.ufs.map((u) => prepareUf(u, prior));
     if (prepared.length === 0) {
       if (myRun === runId) setSnapshot({ status: 'idle', series: [], updatedAt: null, error: null, note: null, phase: null });
       return;
@@ -354,7 +393,10 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
     }
     // await (não void): garante last-write-wins na ordem dos runs (N12).
     if (seriesChanged) await saveSnapshotSeries(Object.fromEntries(sessionSeries));
-    await fineTuneModel(tf, model, onlineRows(sessionSeries));
+    const targetByUf = new Map(
+      prepared.map((p) => [p.input.uf.toLowerCase(), p.target] as const),
+    );
+    await fineTuneModel(tf, model, onlineRows(sessionSeries, targetByUf));
     if (myRun !== runId) return;
 
     // Rollout: o modelo prevê cada uma das 1000 fatias do % restante por UF;
@@ -368,7 +410,7 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
           uf: p.input.uf,
           counted: p.counted,
           share: p.share,
-          anchor: p.anchor,
+          target: p.target,
           weight: p.weight,
         })),
         ROLLOUT_SLICES,
@@ -411,7 +453,7 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
       series,
       updatedAt: Date.now(),
       error: null,
-      note: `2T:${prepared.length}UFs · ${modelProvenance()}`,
+      note: `2T:${prepared.length}UFs · ${modelProvenance()} · ${prior ? 'prior 1T+polls' : 'sem prior'}`,
       phase: null,
     });
   } catch (err) {

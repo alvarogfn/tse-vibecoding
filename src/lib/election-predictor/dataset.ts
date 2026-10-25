@@ -13,23 +13,34 @@ export interface SessionPoint {
 
 /**
  * Linhas online: snapshots 2T da apuração (única fonte de treino).
- * Cada ponto vira (features no instante → share observado). Pontos sem
- * share são ignorados — o treino só começa quando a apuração começa.
+ * Cada ponto vira (features no instante → **target final do prior**). Sem
+ * `targetByUf`, o alvo cai no share observado (comportamento antigo, de
+ * persistência); com o prior 1T, a rede aprende o residual até o final
+ * estrutural, não a repetir o share atual.
  */
-export function onlineRows(series: ReadonlyMap<string, SessionPoint[]>, perUfCap = 10): TrainRow[] {
+export function onlineRows(
+  series: ReadonlyMap<string, SessionPoint[]>,
+  targetByUf?: ReadonlyMap<string, number>,
+  perUfCap = 10,
+): TrainRow[] {
   const rows: TrainRow[] = [];
   for (const [uf, pts] of series) {
     const tail = pts.filter((p) => p.share != null).slice(-perUfCap);
     for (const p of tail) {
       const share = p.share as number;
+      const rawTarget =
+        targetByUf?.get(uf) ?? targetByUf?.get(uf.toUpperCase()) ?? share;
+      const target = Number.isFinite(rawTarget)
+        ? Math.min(100, Math.max(0, rawTarget))
+        : share;
       rows.push({
         xs: buildFeatureVector({
           counted: p.counted,
           share,
-          anchor: share,
+          anchor: target,
           uf,
         }),
-        ys: [Math.min(1, Math.max(0, share / 100))],
+        ys: [Math.min(1, Math.max(0, target / 100))],
       });
     }
   }

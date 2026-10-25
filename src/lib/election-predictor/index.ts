@@ -41,7 +41,11 @@ import { onlineRows } from '@/lib/election-predictor/dataset.js';
 import { loadSnapshotSeries, saveSnapshotSeries } from '@/lib/election-predictor/snapshots.js';
 import { rollout, ROLLOUT_SLICES } from '@/lib/election-predictor/rollout.js';
 import type { RolloutResult } from '@/lib/election-predictor/rollout.js';
-import { runRolloutInWorker } from '@/lib/election-predictor/rollout-worker-client.js';
+import {
+  cancelRolloutInWorker,
+  isRolloutWorkerAvailable,
+  runRolloutInWorker,
+} from '@/lib/election-predictor/rollout-worker-client.js';
 import type { PredictorWorkerUf, PredictorWorkerWeight } from '@/lib/election-predictor/predictor-worker-protocol.js';
 import { fetchStaticPriorInputs } from '@/lib/election-predictor/prior-data.js';
 import { buildStructuralPrior } from '@/lib/election-predictor/structural-prior.js';
@@ -365,6 +369,7 @@ async function rolloutInWorker(
   prepared: PreparedUf[],
   prior: StructuralPrior | null,
 ): Promise<RolloutResult | null> {
+  if (!isRolloutWorkerAvailable()) return null;
   try {
     return await runRolloutInWorker({
       weights: serializeModelWeights(tf, model),
@@ -441,6 +446,7 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
     // below converts it to the `error` snapshot (stale runs stay silent).
     const prepared: PreparedUf[] = sanitized.ufs.map((u) => prepareUf(u, prior));
     if (prepared.length === 0) {
+      cancelRolloutInWorker();
       if (myRun === runId) setSnapshot({ status: 'idle', series: [], updatedAt: null, error: null, note: null, phase: null });
       return;
     }
@@ -562,6 +568,7 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
     });
   } catch (err) {
     if (myRun !== runId) return; // superseded — stay silent.
+    cancelRolloutInWorker();
     // Retryable: forget the failed inputs key so the next identical input
     // retries instead of sticking on the error snapshot forever (H2).
     lastInputsKey = null;
@@ -651,6 +658,7 @@ export function pushPredictorInputs(inputs: PredictorInputs): void {
   const ufs = Array.isArray(inputs.ufs) ? inputs.ufs : [];
   if (ufs.length === 0) {
     // Empty-data state: nothing to predict — idle with no series.
+    cancelRolloutInWorker();
     runId += 1; // invalidate any in-flight recompute.
     lastInputsKey = null;
     setSnapshot({ status: 'idle', series: [], updatedAt: null, error: null, note: null, phase: null });
@@ -671,6 +679,7 @@ export function pushPredictorInputs(inputs: PredictorInputs): void {
   // 0,00% apurado: mostra o prior estrutural (tracejado), sem rollout nem
   // TF. Quando a primeira urna chegar, o passe normal assume.
   if (!hasAnyCount(ufs, inputs.nationalCounted)) {
+    cancelRolloutInWorker();
     const priorRun = runId + 1;
     runId = priorRun;
     setSnapshot({
@@ -707,6 +716,7 @@ export function retrainPredictorFromScratch(): void {
   // Sem dados ainda (ou 0,00% apurado): nada p/ retreinar — idle em vez de
   // loading travado (N14).
   if (lastSanitized == null || !hasAnyCount(lastSanitized.ufs, lastSanitized.nationalCounted)) {
+    cancelRolloutInWorker();
     setSnapshot({ status: 'idle', series: [], updatedAt: null, error: null, note: null, phase: null });
     return;
   }

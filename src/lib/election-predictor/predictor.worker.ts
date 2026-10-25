@@ -141,18 +141,36 @@ function rolloutUfs(request: PredictorWorkerRequest): RolloutUf[] {
 }
 
 function assertRequest(request: PredictorWorkerRequest): void {
-  if (!request || typeof request !== 'object' || typeof request.id !== 'number') {
+  if (!request || typeof request !== 'object' || !Number.isInteger(request.id)) {
     throw new Error('mensagem sem id válido');
   }
   if (!Array.isArray(request.weights) || request.weights.length === 0) {
     throw new Error('mensagem sem pesos');
   }
-  if (!Array.isArray(request.ufs)) throw new Error('mensagem sem UFs');
-  if (!Number.isFinite(request.slices) || request.slices <= 0) {
+  if (!Array.isArray(request.ufs) || request.ufs.length === 0) {
+    throw new Error('mensagem sem UFs');
+  }
+  if (!Number.isInteger(request.slices) || request.slices <= 0 || request.slices > 100_000) {
     throw new Error('slices inválido');
   }
-  if (!Number.isFinite(request.curveFallback)) {
+  if (
+    !Number.isFinite(request.curveFallback) ||
+    request.curveFallback < 0 ||
+    request.curveFallback > 100
+  ) {
     throw new Error('curveFallback inválido');
+  }
+  for (const uf of request.ufs) {
+    if (
+      !uf ||
+      typeof uf.uf !== 'string' ||
+      uf.uf.length === 0 ||
+      !Number.isFinite(uf.counted) ||
+      !Number.isFinite(uf.target) ||
+      !Number.isFinite(uf.weight)
+    ) {
+      throw new Error('UF inválida no payload');
+    }
   }
 }
 

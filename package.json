@@ -9,7 +9,7 @@
     "postbuild": "node -e \"require('fs').copyFileSync('dist/index.html','dist/404.html')\"",
     "preview": "vite preview",
     "deploy": "gh-pages -d dist",
-    "test": "node --test scripts/structural-prior.test.mjs",
+    "test": "node --test scripts/structural-prior.test.mjs scripts/worker-client.test.mjs",
     "backtest:prior": "node scripts/backtest-prior.ts",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json --noEmit"
   },

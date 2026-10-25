@@ -22,12 +22,16 @@ import type {
 /** Payload da main sem o `id` (atribuído pela ponte). */
 export type PredictorWorkerPayload = Omit<PredictorWorkerRequest, 'id'>;
 
-const WORKER_TIMEOUT_MS = 30_000;
+const WORKER_TIMEOUT_MS = 10_000;
 
 interface PendingRollout {
   id: number;
   timer: ReturnType<typeof setTimeout>;
   settle: (result: RolloutResult | null) => void;
+  /** UFs esperadas na resposta (curves.length). */
+  ufs: number;
+  /** Fatias pedidas; o rollout pode devolver 1 quando tudo já está em 100%. */
+  slices: number;
 }
 
 let worker: Worker | null = null;
@@ -39,6 +43,39 @@ function toErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim().length > 0) return error.message;
   const text = String(error);
   return text.trim().length > 0 ? text : 'predictor worker failed';
+}
+
+const isPctArray = (value: unknown): value is number[] =>
+  Array.isArray(value) &&
+  value.every(
+    (item) =>
+      typeof item === 'number' &&
+      Number.isFinite(item) &&
+      item >= 0 &&
+      item <= 100,
+  );
+
+/**
+ * Valida o contrato antes de entregar a resposta ao store. Um payload
+ * truncado/versão divergente cai no fallback da main em vez de virar
+ * `status:'error'` no recompute.
+ */
+function isValidResult(response: {
+  curves: unknown;
+  nationalLula: unknown;
+  nationalFlavio: unknown;
+}, entry: PendingRollout): boolean {
+  if (!Array.isArray(response.curves) || response.curves.length !== entry.ufs) {
+    return false;
+  }
+  if (!isPctArray(response.nationalLula) || !isPctArray(response.nationalFlavio)) {
+    return false;
+  }
+  const length = response.nationalLula.length;
+  if (length < 1 || length > entry.slices) return false;
+  return response.curves.every(
+    (curve) => isPctArray(curve) && curve.length === length,
+  );
 }
 
 /** Settle exatamente uma vez; sem timer nem listener pendurado. */
@@ -70,13 +107,15 @@ function disposeWorker(): void {
  * pedido substituído por outro mais recente.
  */
 function fail(message: string, disable: boolean): void {
+  if (disable) workerDisabled = true;
+  // Liquida primeiro: um console.warn monkeypatched não pode deixar a
+  // Promise pendente nem o Worker vivo.
+  disposeWorker();
+  settle(null);
   if (disable) {
-    workerDisabled = true;
     // Diagnóstico: a projeção segue na main thread, mas queremos rastro.
     console.warn(`[election-predictor] rollout no Worker falhou (${message}); usando a main thread.`);
   }
-  disposeWorker();
-  settle(null);
 }
 
 function createWorker(): Worker {
@@ -102,6 +141,10 @@ function createWorker(): Worker {
     // Resposta órfã (run vencido/timeout): ignora sem tocar no snapshot.
     if (!entry || !response || response.id !== entry.id) return;
     if (response.ok) {
+      if (!isValidResult(response, entry)) {
+        fail('resposta inválida do Worker', true);
+        return;
+      }
       settle({
         curves: response.curves,
         nationalLula: response.nationalLula,
@@ -122,6 +165,20 @@ function createWorker(): Worker {
 
   worker = instance;
   return instance;
+}
+
+/** Há Worker disponível nesta página? (Evita serializar pesos à toa.) */
+export function isRolloutWorkerAvailable(): boolean {
+  return !workerDisabled && typeof Worker !== 'undefined';
+}
+
+/**
+ * Cancela o pedido pendente sem desabilitar o Worker para sempre. Chamado
+ * quando o store invalida um run (0%, UF vazia, erro antes do rollout).
+ */
+export function cancelRolloutInWorker(): void {
+  if (!pending) return;
+  fail('pedido cancelado', false);
 }
 
 /**
@@ -153,10 +210,16 @@ export function runRolloutInWorker(
       fail(`timeout de ${WORKER_TIMEOUT_MS}ms`, true);
     }, WORKER_TIMEOUT_MS);
 
-    pending = { id, timer, settle: resolve };
+    pending = {
+      id,
+      timer,
+      settle: resolve,
+      ufs: payload.ufs.length,
+      slices: payload.slices,
+    };
 
     try {
-      instance.postMessage({ id, ...payload } satisfies PredictorWorkerRequest);
+      instance.postMessage({ ...payload, id } satisfies PredictorWorkerRequest);
     } catch (error) {
       fail(`postMessage: ${toErrorMessage(error)}`, true);
     }

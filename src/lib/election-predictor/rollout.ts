@@ -4,7 +4,15 @@ import { predictRaw01Batch } from '@/lib/election-predictor/analytic-model.js';
 import { buildFeatureVector, clampPct } from '@/lib/election-predictor/features.js';
 import type { FeatureContext } from '@/lib/election-predictor/features.js';
 
-export const ROLLOUT_SLICES = 1000;
+/**
+ * 2000 fatias = passo de 0,05 pp no restante. Benchmark contra referência de
+ * 10.000 (0,25% e 10% apurados): 1000 tinha MAE ~0,09/0,02 pp, mas erro
+ * máximo ~3 pp na primeira fatia e só ~5 pontos na janela de zoom de 0,25%.
+ * 2000 corta o erro máximo para ~2,3/2,4 pp e dobra a resolução visível;
+ * 4000 melhora para ~1,4 pp, mas custa ~6 s na main. 2000 é o equilíbrio
+ * entre resolução, Worker (~2 s) e o timeout de 10 s.
+ */
+export const ROLLOUT_SLICES = 2000;
 
 /**
  * Cede a main thread sem depender de requestAnimationFrame. Em aba de fundo

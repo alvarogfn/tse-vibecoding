@@ -473,6 +473,69 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
   }
 }
 
+/**
+ * Pré-apuração: sem nenhum voto, mostra o prior estrutural (1T + pesquisas)
+ * como projeção tracejada. Não é apuração nem acurácia; é o único número
+ * honesto disponível enquanto a fonte 6258 ainda está em 0%.
+ */
+async function showPriorOnly(sanitized: SanitizedInputs, myRun: number): Promise<void> {
+  try {
+    const prior = await ensureStructuralPrior();
+    if (myRun !== runId) return;
+    if (!prior) {
+      lastInputsKey = null;
+      setSnapshot({ status: 'idle', series: [], updatedAt: null, error: null, note: null, phase: null });
+      return;
+    }
+    const prepared = sanitized.ufs.map((u) => prepareUf(u, prior));
+    if (prepared.length === 0) {
+      setSnapshot({ status: 'idle', series: [], updatedAt: null, error: null, note: null, phase: null });
+      return;
+    }
+    const natTarget = anchorOf(prepared);
+    const series: PredictorSeries[] = [
+      ...prepared.map((p) => ufSeriesFromCurve(p, [p.target])),
+      nationalSeriesFromCurve(
+        'br-flavio',
+        'Brasil · Flávio',
+        0,
+        clampPct(100 - natTarget),
+        null,
+        [clampPct(100 - natTarget)],
+        BR_FLAVIO_COLOR,
+      ),
+      nationalSeriesFromCurve(
+        'br-lula',
+        'Brasil · Lula',
+        0,
+        natTarget,
+        null,
+        [natTarget],
+        BR_LULA_COLOR,
+      ),
+    ];
+    setSnapshot({
+      status: 'ready',
+      series,
+      updatedAt: Date.now(),
+      error: null,
+      note: 'pré-apuração · prior 1T+polls (não é apuração)',
+      phase: null,
+    });
+  } catch {
+    if (myRun !== runId) return;
+    lastInputsKey = null;
+    setSnapshot({
+      status: 'idle',
+      series: [],
+      updatedAt: null,
+      error: null,
+      note: null,
+      phase: null,
+    });
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Contract
 // ---------------------------------------------------------------------------
@@ -501,10 +564,20 @@ export function pushPredictorInputs(inputs: PredictorInputs): void {
   if (key === lastInputsKey) return;
   lastInputsKey = key;
   lastSanitized = sanitized;
-  // 0,00% apurado: nada apurado ainda — idle, sem rollout nem projeção.
+  // 0,00% apurado: mostra o prior estrutural (tracejado), sem rollout nem
+  // TF. Quando a primeira urna chegar, o passe normal assume.
   if (!hasAnyCount(ufs, inputs.nationalCounted)) {
-    runId += 1; // invalidate any in-flight recompute.
-    setSnapshot({ status: 'idle', series: [], updatedAt: null, error: null, note: null, phase: null });
+    const priorRun = runId + 1;
+    runId = priorRun;
+    setSnapshot({
+      status: 'loading',
+      series: current.series,
+      updatedAt: current.updatedAt,
+      error: null,
+      note: current.note,
+      phase: 'carregando prior 1T + pesquisas…',
+    });
+    void showPriorOnly(sanitized, priorRun);
     return;
   }
   const myRun = runId + 1;

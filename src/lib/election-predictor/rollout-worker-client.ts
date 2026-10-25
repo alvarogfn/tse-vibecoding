@@ -8,7 +8,7 @@
  * - Um único rollout em voo. Um pedido novo termina o Worker anterior para
  *   interromper o CPU e evitar resposta obsoleta; `id` ainda descarta
  *   qualquer resposta atrasada.
- * - Timeout de 30s: Worker travado não congela a apuração.
+ * - Timeout de 5s: Worker travado não congela a apuração.
  * - Depois de uma falha de runtime, o Worker fica desativado nesta página
  *   (evita pagar timeout a cada passe); recarregar restabelece.
  * - Listeners, timer e a Promise pendente são sempre limpos em `settle`.
@@ -22,7 +22,7 @@ import type {
 /** Payload da main sem o `id` (atribuído pela ponte). */
 export type PredictorWorkerPayload = Omit<PredictorWorkerRequest, 'id'>;
 
-const WORKER_TIMEOUT_MS = 10_000;
+const WORKER_TIMEOUT_MS = 5_000;
 
 interface PendingRollout {
   id: number;

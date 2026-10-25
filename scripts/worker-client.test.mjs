@@ -161,7 +161,7 @@ test('worker client: timeout liquida e desabilita o Worker', async () => {
     const client = await loadClient();
     const promise = client.runRolloutInWorker(payload());
     const worker = FakeWorker.instances[0];
-    mock.timers.tick(10_000);
+    mock.timers.tick(5_000);
     assert.equal(await promise, null);
     assert.equal(worker.terminated, true);
     assert.equal(client.isRolloutWorkerAvailable(), false);

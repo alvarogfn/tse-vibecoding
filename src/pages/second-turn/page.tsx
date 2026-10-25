@@ -214,6 +214,7 @@ export default function SegundoTurno(): React.JSX.Element {
         >
           <input
             type="checkbox"
+            aria-label="Projeção nos mapas"
             checked={showProjection}
             onChange={(e) => setShowProjection(e.target.checked)}
             className="accent-[#facc15] h-3.5 w-3.5 cursor-pointer"

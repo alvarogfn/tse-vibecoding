@@ -237,13 +237,25 @@ function prepareUf(input: PredictorUfInput, prior: StructuralPrior | null): Prep
   };
 }
 
-/** Solid factual segment: anchor at x=0 → observed share at x=counted. */
-function historyFor(counted: number, anchor: number, share: number | null): PredictorPoint[] {
-  if (share == null) return [];
-  return [
-    { x: 0, y: clampPct(anchor) },
-    { x: counted, y: clampPct(share) },
-  ];
+/**
+ * Trecho factual: snapshots 2T realmente vistos, ordenados por counted.
+ * Não inventa um ponto em 0% (o anchor é prior, não apuração). Com um único
+ * snapshot, o gráfico mostra um ponto; com vários, a linha sólida cresce.
+ */
+function actualHistory(
+  points: ReadonlyArray<{ counted: number; share: number | null }> | undefined,
+  counted: number,
+  share: number | null,
+): PredictorPoint[] {
+  const byX = new Map<number, number>();
+  for (const point of points ?? []) {
+    if (point.share == null || point.counted <= 0) continue;
+    byX.set(point.counted, clampPct(point.share));
+  }
+  if (share != null && counted > 0) byX.set(counted, clampPct(share));
+  return [...byX.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([x, y]) => ({ x, y }));
 }
 
 /** Média ponderada das âncoras das UFs (mesmos pesos do bottom-up). */
@@ -282,6 +294,7 @@ function ufSeriesFromCurve(
   p: PreparedUf,
   ys: number[],
   progress?: readonly number[],
+  history: PredictorPoint[] = [],
 ): PredictorSeries {
   // Cor pelo VENCEDOR PROJETADO (final da curva), nunca pelo vencedor aparente
   // da varredura: com poucas urnas apuradas o sweep empata no 0×0 e elegeria
@@ -294,7 +307,7 @@ function ufSeriesFromCurve(
     label: p.input.uf.toUpperCase(),
     kind: 'uf',
     counted: p.counted,
-    history: historyFor(p.counted, p.anchor, p.share),
+    history,
     estimate: [{ x: p.counted, y: start }, ...curvePoints(p.counted, ys, progress)],
     color,
     lightColor: lightOf(color),
@@ -312,6 +325,7 @@ function nationalSeriesFromCurve(
   ys: number[],
   color: string,
   progress?: readonly number[],
+  history: PredictorPoint[] = [],
 ): PredictorSeries {
   const start = share != null ? clampPct(share) : clampPct(anchor);
   return {
@@ -319,7 +333,7 @@ function nationalSeriesFromCurve(
     label,
     kind: id,
     counted,
-    history: historyFor(counted, anchor, share),
+    history,
     estimate: [{ x: counted, y: start }, ...curvePoints(counted, ys, progress)],
     color,
     lightColor: lightOf(color),
@@ -468,6 +482,10 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
     // bumped runId while awaits above resolved (H1: no poisoned snapshots).
     if (myRun !== runId) return;
 
+    const natCounted = clampCounted(sanitized.nationalCounted);
+    const natRaw = cleanShare(sanitized.nationalShare);
+    const natShare = natRaw === 0 && natCounted <= 0 ? null : natRaw;
+
     // Acumula a série 2T da sessão (só muda quando counted/share mudam) e
     // refina os pesos com os snapshots 2T. Sem share (0% apurado) não há
     // linha de treino — o modelo segue analítico até a apuração começar.
@@ -500,18 +518,36 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
         seriesChanged = true;
       }
     }
+    // Histórico nacional (chave interna; não entra no treino por UF).
+    if (natCounted > 0 && natShare != null) {
+      const key = '__br';
+      const arr = sessionSeries.get(key) ?? [];
+      const last = arr[arr.length - 1];
+      if (!last || last.counted !== natCounted || last.share !== natShare) {
+        arr.push({ counted: natCounted, share: natShare });
+        if (arr.length > SESSION_CAP) arr.shift();
+        sessionSeries.set(key, arr);
+        seriesChanged = true;
+      }
+    }
     // await (não void): garante last-write-wins na ordem dos runs (N12).
     if (seriesChanged) await saveSnapshotSeries(Object.fromEntries(sessionSeries));
     const targetByUf = new Map(
       prepared.map((p) => [p.input.uf.toLowerCase(), p.target] as const),
     );
-    await fineTuneModel(
-      tf,
-      model,
-      onlineRows(sessionSeries, targetByUf, (uf, counted) =>
-        featureContextFor(prior, uf, counted),
-      ),
+    const trainRows = onlineRows(sessionSeries, targetByUf, (uf, counted) =>
+      featureContextFor(prior, uf, counted),
     );
+    // Com poucos snapshots o fitDataset pode ficar preso no rAF/WebGL e
+    // bloquear a projeção inteira; 5 linhas também não treinam nada útil.
+    // Só entra no fine-tune quando há massa mínima; o prior estrutural já
+    // define o endpoint enquanto isso.
+    const canTrain =
+      (typeof document === 'undefined' || document.visibilityState === 'visible') &&
+      trainRows.length >= 20;
+    if (canTrain) {
+      await fineTuneModel(tf, model, trainRows);
+    }
     if (myRun !== runId) return;
 
     // Rollout: o modelo prevê cada uma das 1000 fatias do % restante por UF;
@@ -542,16 +578,24 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
     if (myRun !== runId || !result) return;
     const { progress, curves, nationalLula, nationalFlavio } = result;
 
-    const natCounted = clampCounted(sanitized.nationalCounted);
-    const natRaw = cleanShare(sanitized.nationalShare);
-    const natShare = natRaw === 0 && natCounted <= 0 ? null : natRaw;
     const natAnchor = anchorOf(prepared);
     const flavioShare = natShare != null ? clampPct(100 - natShare) : null;
 
     // UFs first, nationals last: Chart.js paints later datasets on top,
     // so the thick mains stay above the thin UF lines (H3).
     const series: PredictorSeries[] = [
-      ...prepared.map((p, i) => ufSeriesFromCurve(p, curves[i] ?? [], progress)),
+      ...prepared.map((p, i) =>
+        ufSeriesFromCurve(
+          p,
+          curves[i] ?? [],
+          progress,
+          actualHistory(
+            sessionSeries.get(p.input.uf.toLowerCase()),
+            p.counted,
+            p.share,
+          ),
+        ),
+      ),
       nationalSeriesFromCurve(
         'br-flavio',
         'Brasil · Flávio',
@@ -561,6 +605,7 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
         nationalFlavio,
         BR_FLAVIO_COLOR,
         progress,
+        actualHistory(sessionSeries.get('__br'), natCounted, natShare),
       ),
       nationalSeriesFromCurve(
         'br-lula',
@@ -571,6 +616,7 @@ async function recompute(sanitized: SanitizedInputs, myRun: number): Promise<voi
         nationalLula,
         BR_LULA_COLOR,
         progress,
+        actualHistory(sessionSeries.get('__br'), natCounted, natShare),
       ),
     ];
 

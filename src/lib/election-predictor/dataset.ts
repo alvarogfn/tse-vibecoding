@@ -27,6 +27,9 @@ export function onlineRows(
 ): TrainRow[] {
   const rows: TrainRow[] = [];
   for (const [uf, pts] of series) {
+    // Chaves internas (ex.: __br) guardam histórico nacional para o gráfico;
+    // não são UFs e não entram no treino.
+    if (uf.startsWith('__')) continue;
     const tail = pts.filter((p) => p.share != null).slice(-perUfCap);
     for (const p of tail) {
       const share = p.share as number;

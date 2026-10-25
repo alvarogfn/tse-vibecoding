@@ -154,7 +154,14 @@ export function PredictorCard(): React.JSX.Element {
           borderWidth: s.width,
           tension: 0.4,
           spanGaps: false,
-          pointRadius: 0,
+          // Mostra um ponto em cada snapshot factual (inclusive quando há só
+          // um). A projeção continua sem pontos para não poluir.
+          pointRadius: (ctx) => {
+            const point = data[ctx.dataIndex];
+            return point != null && point.y != null && point.x <= s.counted + 1e-9
+              ? 2.2
+              : 0;
+          },
           pointHoverRadius: 3,
           pointHitRadius: 8,
           hidden: s.kind === 'uf' ? !isShown(s) : false,
@@ -244,6 +251,9 @@ export function PredictorCard(): React.JSX.Element {
           titleFont: { size: 11 },
           bodyFont: { size: 11 },
           footerFont: { size: 10 },
+          // O ponto null que separa factual de projeção não deve aparecer
+          // como “sem dado” no tooltip.
+          filter: (item: TooltipItem<'line'>) => typeof item.parsed.y === 'number',
           callbacks: {
             title: (items: TooltipItem<'line'>[]): string => {
               const x = items[0]?.parsed.x;
@@ -252,15 +262,15 @@ export function PredictorCard(): React.JSX.Element {
             label: (item: TooltipItem<'line'>): string => {
               const y = item.parsed.y;
               if (typeof y !== 'number') return ` ${item.dataset.label ?? ''}: sem dado`;
-              // A série nacional do Flávio guarda o share DELE (100 − Lula);
-              // as demais (UFs e Brasil · Lula) guardam o share do Lula.
-              // Normaliza antes de decidir o vencedor, senão o tooltip da linha
-              // do Flávio mostrava o nome do perdedor com o % do vencedor.
+              // Cada série nacional guarda o share do PRÓPRIO candidato:
+              // Flávio = 100 − Lula. Mostre o valor da série, sem trocar o
+              // nome pelo vencedor (isso fazia a linha do Flávio aparecer como
+              // "Lula 57,66%").
               const s = snapshot.series[item.datasetIndex ?? -1];
-              const lulaShare = s?.kind === 'br-flavio' ? 100 - y : y;
-              const lulaWins = lulaShare >= 50;
-              const name = lulaWins ? candNames.lula : candNames.flavio;
-              return ` ${item.dataset.label ?? ''}: ${name} ${fmtPct(lulaWins ? lulaShare : 100 - lulaShare)}`;
+              if (s?.kind === 'br-flavio' || s?.kind === 'br-lula') {
+                return ` ${s.label}: ${fmtPct(y)}`;
+              }
+              return ` ${s?.label ?? ''} · ${candNames.lula} ${fmtPct(y)} · ${candNames.flavio} ${fmtPct(100 - y)}`;
             },
             footer: (items: TooltipItem<'line'>[]): string => {
               const first = items[0];

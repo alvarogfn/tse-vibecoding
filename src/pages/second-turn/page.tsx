@@ -205,6 +205,9 @@ export default function SegundoTurno(): React.JSX.Element {
         <h1>2º turno 2026</h1>
         <div className="sub">Presidente · Brasil à esquerda · Minas Gerais à direita</div>
         <div className="spacer" />
+        <Link className="btn-ghost-sm" to="/2-turn-statistics" style={{ textDecoration: 'none' }}>
+          Estatísticas
+        </Link>
         <Link className="btn-ghost-sm" to="/1-turno" style={{ textDecoration: 'none' }}>
           1º turno
         </Link>

@@ -3,6 +3,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router'
 import SecondTurn from '@/pages/second-turn/page'
+import SecondTurnStatistics from '@/pages/second-turn-statistics/page'
 import FirstTurn from '@/pages/first-turn/page'
 import './index.css'
 
@@ -18,6 +19,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <Routes>
         <Route path="/" element={<Navigate to="/2-turno" replace />} />
         <Route path="2-turno" element={<SecondTurn />} />
+        <Route path="2-turn-statistics" element={<SecondTurnStatistics />} />
         <Route path="1-turno" element={<FirstTurn />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

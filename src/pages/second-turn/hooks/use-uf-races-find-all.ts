@@ -11,6 +11,13 @@ export interface UfRaceStat {
   pst: number;
   validos: number;
   eleitorado: number;
+  brancos: number;
+  nulos: number;
+  totalVotos: number;
+  comparecimento: number;
+  abstencoes: number;
+  secoes: number;
+  secoesTotal: number;
   top: Array<{ numero: string; pvapNum: number }>;
 }
 
@@ -79,12 +86,24 @@ export const useUfRacesFindAll = (topNumeros: string[], enabled: boolean) => {
                   vap: win.vap,
                 };
               // Derivação p/ o preditor (TF.js): apuração, válidos, eleitorado e top-2 local.
+              const brancos = parseBrInt(parsed.meta?.v?.vb);
+              const nulos = parseBrInt(parsed.meta?.v?.vn);
+              const validos = parsed.meta?.validos ?? 0;
+              const eleitorado = parseBrInt(parsed.meta?.e?.te ?? 0);
+              const comparecimento = parseBrInt(parsed.meta?.e?.c);
               stats[uf] = {
                 pst: parseBrPct(parsed.meta?.s?.pst),
-                validos: parsed.meta?.validos ?? 0,
+                validos,
                 // parseBrInt, não Number(): "16.372.372" daria NaN e zerava o
                 // peso da UF na agregação bottom-up (M8).
-                eleitorado: parseBrInt(parsed.meta?.e?.te ?? 0),
+                eleitorado,
+                brancos,
+                nulos,
+                totalVotos: validos + brancos + nulos,
+                comparecimento,
+                abstencoes: Math.max(0, eleitorado - comparecimento),
+                secoes: parseBrInt(parsed.meta?.s?.st),
+                secoesTotal: parseBrInt(parsed.meta?.s?.ts),
                 top: cands.slice(0, 2).map((c) => ({ numero: String(c.numero), pvapNum: c.pvapNum })),
               };
             } catch {

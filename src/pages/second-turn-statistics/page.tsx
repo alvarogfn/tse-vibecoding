@@ -273,6 +273,36 @@ export default function SecondTurnStatistics(): React.JSX.Element {
     };
   }, [firstTurn, national]);
 
+  const hypothetical = useMemo(() => {
+    if (!firstTurn) return null;
+    const renanVotes =
+      firstTurn.others.find((candidate) => candidate.numero === '14')?.votos ?? 0;
+    const lula = national.lulaVotos;
+    const flavio = national.flavioVotos;
+    const total = lula + flavio;
+    if (renanVotes <= 0 || total <= 0) return null;
+    const lulaHypo = lula - renanVotes;
+    const flavioHypo = flavio + renanVotes;
+    const lulaHypoPct = (lulaHypo / total) * 100;
+    const flavioHypoPct = (flavioHypo / total) * 100;
+    const flavioWins = flavioHypo > lulaHypo;
+    return {
+      renanVotes,
+      renanPct: (renanVotes / firstTurn.validos) * 100,
+      lula,
+      flavio,
+      lulaPct: (lula / total) * 100,
+      flavioPct: (flavio / total) * 100,
+      lulaHypo,
+      flavioHypo,
+      lulaHypoPct,
+      flavioHypoPct,
+      flavioWins,
+      marginVotes: Math.abs(flavioHypo - lulaHypo),
+      marginPct: (Math.abs(flavioHypo - lulaHypo) / total) * 100,
+    };
+  }, [firstTurn, national]);
+
   const exportCsv = (): void => {
     const header = [
       'UF',
@@ -368,6 +398,136 @@ export default function SecondTurnStatistics(): React.JSX.Element {
             detail={national.flavioPct == null ? '—' : fmtPct(national.flavioPct)}
           />
         </section>
+
+        {hypothetical ? (
+          <section
+            className="relative overflow-hidden rounded-xl border border-accent/50 p-4 md:p-5 shadow-[0_0_50px_rgba(250,204,21,0.07)] print:break-inside-avoid"
+            style={{
+              background:
+                'radial-gradient(circle at 100% 0%, rgba(37,99,235,0.16), transparent 38%), radial-gradient(circle at 0% 100%, rgba(220,38,38,0.12), transparent 36%), linear-gradient(135deg, #09090b 0%, #11100a 55%, #070d17 100%)',
+            }}
+          >
+            <div className="absolute inset-x-0 top-0 h-[3px] bg-accent" />
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[10px] uppercase tracking-[0.18em] text-muted">
+                  Exercício hipotético · 1T → 2T
+                </div>
+                <h2 className="text-[clamp(18px,2.7vw,30px)] font-black text-white leading-[1.1] mt-1 max-w-[860px]">
+                  E se os {fmtInt(hypothetical.renanVotes)} votos do Renan saíssem do Lula e
+                  fossem para o Flávio?
+                </h2>
+                <p className="text-[11px] leading-[1.5] text-[#d4d4d8] mt-2 max-w-[760px]">
+                  Renan Santos teve <b className="text-white">{fmtInt(hypothetical.renanVotes)}</b>{' '}
+                  votos no 1T ({fmtPct(hypothetical.renanPct)} dos válidos). Cenário extremo:
+                  retiramos <b className="text-white">100%</b> desse total do Lula e somamos ao
+                  Flávio, mantendo o total de votos válidos do 2T.
+                </p>
+              </div>
+              <div
+                className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] whitespace-nowrap ${
+                  hypothetical.flavioWins
+                    ? 'border-[#2563eb] bg-[#101c38] text-[#93c5fd]'
+                    : 'border-[#dc2626] bg-[#2a0d0d] text-[#fca5a5]'
+                }`}
+              >
+                {hypothetical.flavioWins ? 'Sim · Flávio venceria' : 'Não · Lula venceria'}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+              <div className="bg-black/35 border border-line rounded-lg p-3">
+                <div className="text-[10px] uppercase tracking-[0.14em] text-muted">Como está</div>
+                <div className="flex items-center justify-between gap-2 text-[11px] mt-2">
+                  <span className="text-[#fca5a5] font-extrabold">Lula</span>
+                  <span className="text-white font-extrabold">
+                    {fmtInt(hypothetical.lula)} · {fmtPct(hypothetical.lulaPct)}
+                  </span>
+                </div>
+                <div className="h-2 bg-[#27272a] rounded-full overflow-hidden mt-1">
+                  <div className="h-full bg-[#dc2626]" style={{ width: `${hypothetical.lulaPct}%` }} />
+                </div>
+                <div className="flex items-center justify-between gap-2 text-[11px] mt-2">
+                  <span className="text-[#93c5fd] font-extrabold">Flávio</span>
+                  <span className="text-white font-extrabold">
+                    {fmtInt(hypothetical.flavio)} · {fmtPct(hypothetical.flavioPct)}
+                  </span>
+                </div>
+                <div className="h-2 bg-[#27272a] rounded-full overflow-hidden mt-1">
+                  <div className="h-full bg-[#2563eb]" style={{ width: `${hypothetical.flavioPct}%` }} />
+                </div>
+                <div className="text-[10px] text-muted mt-2">
+                  Margem atual: {hypothetical.lula >= hypothetical.flavio ? 'Lula' : 'Flávio'} +
+                  {fmtInt(Math.abs(hypothetical.lula - hypothetical.flavio))} ·{' '}
+                  {fmtPct(
+                    (Math.abs(hypothetical.lula - hypothetical.flavio) /
+                      (hypothetical.lula + hypothetical.flavio)) *
+                      100,
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-black/35 border border-accent/30 rounded-lg p-3">
+                <div className="text-[10px] uppercase tracking-[0.14em] text-accent">
+                  Com a troca
+                </div>
+                <div className="flex items-center justify-between gap-2 text-[11px] mt-2">
+                  <span className="text-[#fca5a5] font-extrabold">Lula</span>
+                  <span className="text-white font-extrabold">
+                    {fmtInt(hypothetical.lulaHypo)} · {fmtPct(hypothetical.lulaHypoPct)}
+                  </span>
+                </div>
+                <div className="h-2 bg-[#27272a] rounded-full overflow-hidden mt-1">
+                  <div className="h-full bg-[#dc2626]" style={{ width: `${hypothetical.lulaHypoPct}%` }} />
+                </div>
+                <div className="flex items-center justify-between gap-2 text-[11px] mt-2">
+                  <span className="text-[#93c5fd] font-extrabold">Flávio</span>
+                  <span className="text-white font-extrabold">
+                    {fmtInt(hypothetical.flavioHypo)} · {fmtPct(hypothetical.flavioHypoPct)}
+                  </span>
+                </div>
+                <div className="h-2 bg-[#27272a] rounded-full overflow-hidden mt-1">
+                  <div className="h-full bg-[#2563eb]" style={{ width: `${hypothetical.flavioHypoPct}%` }} />
+                </div>
+                <div className="text-[10px] text-muted mt-2">
+                  {hypothetical.flavioWins
+                    ? `Virada: Flávio +${fmtInt(hypothetical.marginVotes)} · ${fmtPct(hypothetical.marginPct)}`
+                    : `Lula +${fmtInt(hypothetical.marginVotes)} · ${fmtPct(hypothetical.marginPct)}`}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 mt-3 items-center bg-black/30 border border-line rounded-lg p-3">
+              <div className="font-mono text-[12px] leading-[1.7] text-[#e7e5e4]">
+                <div>
+                  <span className="text-[#fca5a5] font-bold">LULA</span>{' '}
+                  {fmtInt(hypothetical.lula)} − {fmtInt(hypothetical.renanVotes)} ={' '}
+                  <span className="text-white font-black">{fmtInt(hypothetical.lulaHypo)}</span>
+                </div>
+                <div>
+                  <span className="text-[#93c5fd] font-bold">FLÁVIO</span>{' '}
+                  {fmtInt(hypothetical.flavio)} + {fmtInt(hypothetical.renanVotes)} ={' '}
+                  <span className="text-white font-black">{fmtInt(hypothetical.flavioHypo)}</span>
+                </div>
+              </div>
+              <div className="md:text-right">
+                <div className="text-[10px] uppercase tracking-[0.14em] text-muted">Resultado</div>
+                <div className="text-[20px] font-black text-accent leading-tight">
+                  {hypothetical.flavioWins ? 'Flávio' : 'Lula'} +{fmtInt(hypothetical.marginVotes)}
+                </div>
+                <div className="text-[10px] text-muted">
+                  {fmtPct(hypothetical.marginPct)} de vantagem
+                </div>
+              </div>
+            </div>
+
+            <p className="hint mt-2">
+              Premissa: todos os {fmtInt(hypothetical.renanVotes)} votos do Renan no 1T saem do
+              Lula e entram no Flávio, sem alterar abstenções, nulos ou brancos. É um exercício
+              contábil, não a transferência observada.
+            </p>
+          </section>
+        ) : null}
 
         <section className="bg-card border border-line rounded-lg p-3">
           <div className="flex flex-wrap items-baseline justify-between gap-2">

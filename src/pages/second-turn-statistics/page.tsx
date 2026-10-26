@@ -410,10 +410,7 @@ export default function SecondTurnStatistics(): React.JSX.Element {
             <div className="absolute inset-x-0 top-0 h-[3px] bg-accent" />
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
-                <div className="text-[10px] uppercase tracking-[0.18em] text-muted">
-                  Cenário hipotético
-                </div>
-                <h2 className="text-[clamp(20px,3vw,32px)] font-black text-white leading-[1.08] mt-1">
+                <h2 className="text-[clamp(20px,3vw,32px)] font-black text-white leading-[1.08]">
                   E se os votos de Renan fossem para Flávio?
                 </h2>
                 <p className="text-[11px] leading-[1.5] text-[#d4d4d8] mt-2 max-w-[700px]">
